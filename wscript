@@ -229,6 +229,7 @@ def configure (conf):
         conf.define ('GRANITE_VERSION', 'No')
 
     conf.check (lib='m', mandatory=True)
+    conf.check (lib='ssl', mandatory=True)
     check_pkg ('gmodule-2.0', '2.8.0', False)
     check_pkg ('gthread-2.0', '2.8.0', False)
     check_pkg ('gio-2.0', '2.22.0')
@@ -627,7 +628,7 @@ def shutdown ():
                 os.chdir (Build.bld.env['PREFIX'] + os.sep + 'bin')
                 command += ' wine cmd /k "PATH=%PATH%;' + Build.bld.env['PREFIX'] + os.sep + 'bin' + ' && ' + APPNAME + '.exe"'
             else:
-                command += ' ' + relfolder + os.sep + APPNAME + os.sep + APPNAME
+                command += ' gdb ' + relfolder + os.sep + APPNAME + os.sep + APPNAME
             print (command)
             Utils.exec_command (command)
         except Exception:
