@@ -12,6 +12,7 @@
 #include "midori-preferences.h"
 
 #include "midori-app.h"
+#include "midori-core.h"
 #include "midori-platform.h"
 
 #include <string.h>
@@ -293,7 +294,7 @@ midori_preferences_set_settings (MidoriPreferences* preferences,
     #define SPANNED_ADD(__widget) \
      katze_preferences_add_widget (_preferences, __widget, "spanned")
     /* Page "General" */
-    if (!sokoke_is_app_or_private ())
+    if (!midori_paths_is_readonly ())
     {
     PAGE_NEW (GTK_STOCK_HOME, _("Startup"));
     FRAME_NEW (NULL);
@@ -301,7 +302,8 @@ midori_preferences_set_settings (MidoriPreferences* preferences,
     INDENTED_ADD (label);
     button = katze_property_proxy (settings, "load-on-startup", NULL);
     SPANNED_ADD (button);
-    label = katze_property_label (settings, "homepage");
+    label = gtk_label_new (_("Homepage:"));
+    gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);
     INDENTED_ADD (label);
     entry = katze_property_proxy (settings, "homepage", "address");
     SPANNED_ADD (entry);
@@ -361,12 +363,14 @@ midori_preferences_set_settings (MidoriPreferences* preferences,
     FRAME_NEW (NULL);
     #if !HAVE_HILDON
     button = katze_property_proxy (settings, "auto-load-images", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Load images automatically"));
     INDENTED_ADD (button);
     button = katze_property_proxy (settings, "enable-spell-checking", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Enable Spell Checking"));
     SPANNED_ADD (button);
     /* Disable spell check option if there are no enchant modules */
     {
-        gchar* enchant_path = midori_app_get_lib_path ("enchant");
+        gchar* enchant_path = midori_paths_get_lib_path ("enchant");
         if (enchant_path == NULL)
         {
             gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (button), FALSE);
@@ -376,11 +380,15 @@ midori_preferences_set_settings (MidoriPreferences* preferences,
             g_free (enchant_path);
     }
     button = katze_property_proxy (settings, "enable-scripts", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Enable scripts"));
     INDENTED_ADD (button);
     button = katze_property_proxy (settings, "enable-plugins", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Enable Netscape plugins"));
+    gtk_widget_set_sensitive (button, midori_web_settings_has_plugin_support ());
     SPANNED_ADD (button);
     #endif
     button = katze_property_proxy (settings, "zoom-text-and-images", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Zoom Text and Images"));
     INDENTED_ADD (button);
     button = katze_property_proxy (settings, "javascript-can-open-windows-automatically", NULL);
     gtk_button_set_label (GTK_BUTTON (button), _("Allow scripts to open popups"));
@@ -388,30 +396,40 @@ midori_preferences_set_settings (MidoriPreferences* preferences,
     SPANNED_ADD (button);
     if (katze_widget_has_touchscreen_mode (parent ?
         GTK_WIDGET (parent) : GTK_WIDGET (preferences)))
+    {
         button = katze_property_proxy (settings, "kinetic-scrolling", NULL);
+        gtk_button_set_label (GTK_BUTTON (button), _("Kinetic scrolling"));
+        gtk_widget_set_tooltip_text (button, _("Whether scrolling should kinetically move according to speed"));
+    }
     else
+    {
         button = katze_property_proxy (settings, "middle-click-opens-selection", NULL);
+        gtk_button_set_label (GTK_BUTTON (button), _("Middle click opens Selection"));
+        gtk_widget_set_tooltip_text (button, _("Load an address from the selection via middle click"));
+    }
     INDENTED_ADD (button);
-    button = katze_property_proxy (settings, "flash-window-on-new-bg-tabs", NULL);
-    SPANNED_ADD (button);
-
     if (katze_object_has_property (settings, "enable-webgl"))
     {
         button = katze_property_proxy (settings, "enable-webgl", NULL);
-        INDENTED_ADD (button);
+        gtk_button_set_label (GTK_BUTTON (button), _("Enable WebGL support"));
+        SPANNED_ADD (button);
     }
+    #ifndef G_OS_WIN32
+    button = katze_property_proxy (settings, "flash-window-on-new-bg-tabs", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Flash window on background tabs"));
+    INDENTED_ADD (button);
+    #endif
 
     FRAME_NEW (NULL);
     button = katze_property_label (settings, "preferred-languages");
     INDENTED_ADD (button);
     entry = katze_property_proxy (settings, "preferred-languages", "languages");
     SPANNED_ADD (entry);
-    #if !HAVE_HILDON
-    label = katze_property_label (settings, "download-folder");
+    label = gtk_label_new (_("Save downloaded files to:"));
+    gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);
     INDENTED_ADD (label);
     button = katze_property_proxy (settings, "download-folder", "folder");
     SPANNED_ADD (button);
-    #endif
 
     /* Page "Interface" */
     PAGE_NEW (GTK_STOCK_CONVERT, _("Browsing"));
@@ -429,47 +447,51 @@ midori_preferences_set_settings (MidoriPreferences* preferences,
     INDENTED_ADD (label);
     button = katze_property_proxy (settings, "open-new-pages-in", NULL);
     SPANNED_ADD (button);
-    #if !HAVE_HILDON
     button = katze_property_proxy (settings, "close-buttons-on-tabs", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Close Buttons on Tabs"));
     INDENTED_ADD (button);
     #ifndef HAVE_GRANITE
     button = katze_property_proxy (settings, "always-show-tabbar", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Always Show Tabbar"));
     SPANNED_ADD (button);
-    #endif
     #endif
     button = katze_property_proxy (settings, "open-tabs-next-to-current", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Open Tabs next to Current"));
+    gtk_widget_set_tooltip_text (button, _("Whether to open new tabs next to the current tab or after the last one"));
     INDENTED_ADD (button);
     button = katze_property_proxy (settings, "open-tabs-in-the-background", NULL);
+    gtk_button_set_label (GTK_BUTTON (button), _("Open tabs in the background"));
     SPANNED_ADD (button);
-    #if !HAVE_HILDON
+
     INDENTED_ADD (gtk_label_new (NULL));
-    label = katze_property_label (settings, "text-editor");
+    label = gtk_label_new (_("Text Editor"));
+    gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);
     INDENTED_ADD (label);
     entry = katze_property_proxy (settings, "text-editor", "application-text/plain");
     SPANNED_ADD (entry);
-    label = katze_property_label (settings, "news-aggregator");
+    label = gtk_label_new (_("News Aggregator"));
+    gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);
     INDENTED_ADD (label);
     entry = katze_property_proxy (settings, "news-aggregator", "application-News");
     SPANNED_ADD (entry);
-    #endif
 
     /* Page "Network" */
     PAGE_NEW (GTK_STOCK_NETWORK, _("Network"));
     FRAME_NEW (NULL);
-    #if !HAVE_HILDON
-    label = katze_property_label (settings, "proxy-type");
+    label = gtk_label_new (_("Proxy server"));
+    gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);
     INDENTED_ADD (label);
     button = katze_property_proxy (settings, "proxy-type", NULL);
     SPANNED_ADD (button);
     label = gtk_label_new (_("Hostname"));
     gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);
     INDENTED_ADD (label);
-    entry = katze_property_proxy (settings, "http-proxy", NULL);
+    entry = katze_property_proxy (settings, "http-proxy", "address");
     SPANNED_ADD (entry);
     g_signal_connect (settings, "notify::proxy-type",
         G_CALLBACK (midori_preferences_notify_proxy_type_cb), entry);
     midori_preferences_notify_proxy_type_cb (settings, NULL, entry);
-    label = katze_property_label (settings, "http-proxy-port");
+    label = gtk_label_new (_("Port"));
     gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);
     INDENTED_ADD (label);
     entry = katze_property_proxy (settings, "http-proxy-port", NULL);
@@ -477,13 +499,14 @@ midori_preferences_set_settings (MidoriPreferences* preferences,
     g_signal_connect (settings, "notify::proxy-type",
         G_CALLBACK (midori_preferences_notify_proxy_type_cb), entry);
     midori_preferences_notify_proxy_type_cb (settings, NULL, entry);
-    #endif
     #if WEBKIT_CHECK_VERSION (1, 3, 11)
     if (soup_session_get_feature (webkit_get_default_session (), SOUP_TYPE_CACHE))
     {
-        label = katze_property_label (settings, "maximum-cache-size");
+        label = gtk_label_new (_("Web Cache"));
+        gtk_widget_set_tooltip_text (label, _("The maximum size of cached pages on disk"));
         INDENTED_ADD (label);
         button = katze_property_proxy (settings, "maximum-cache-size", NULL);
+        gtk_widget_set_tooltip_text (button, _("The maximum size of cached pages on disk"));
         SPANNED_ADD (button);
         label = gtk_label_new (_("MB"));
         gtk_misc_set_alignment (GTK_MISC (label), 0.0, 0.5);

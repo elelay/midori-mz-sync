@@ -300,6 +300,7 @@ midori_panel_init (MidoriPanel* panel)
 
     /* Create the titlebar */
     labelbar = gtk_toolbar_new ();
+    katze_widget_add_class (labelbar, "secondary-toolbar");
     panel->labelbar = labelbar;
     gtk_toolbar_set_icon_size (GTK_TOOLBAR (labelbar), GTK_ICON_SIZE_MENU);
     gtk_toolbar_set_style (GTK_TOOLBAR (labelbar), GTK_TOOLBAR_ICONS);
@@ -345,6 +346,7 @@ midori_panel_init (MidoriPanel* panel)
 
     /* Create the notebook */
     panel->notebook = gtk_notebook_new ();
+    katze_widget_add_class (panel->notebook, "content-view");
     gtk_notebook_set_show_border (GTK_NOTEBOOK (panel->notebook), FALSE);
     gtk_notebook_set_show_tabs (GTK_NOTEBOOK (panel->notebook), FALSE);
     panel->frame = gtk_frame_new (NULL);
@@ -489,13 +491,15 @@ midori_panel_set_right_aligned (MidoriPanel* panel,
 /* Private function, used by MidoriBrowser */
 /* static */ GtkWidget*
 midori_panel_construct_menu_item (MidoriPanel*    panel,
-                                  MidoriViewable* viewable)
+                                  MidoriViewable* viewable,
+                                  gboolean        popup)
 {
     GtkAction* action;
     GtkWidget* menuitem;
 
     action = g_object_get_data (G_OBJECT (viewable), "midori-panel-action");
-    menuitem = gtk_action_create_menu_item (action);
+    menuitem = popup ? sokoke_action_create_popup_menu_item (action)
+      : gtk_action_create_menu_item (action);
     g_object_set_data (G_OBJECT (menuitem), "page", viewable);
 
     if (gtk_widget_get_visible (GTK_WIDGET (viewable)))
@@ -614,7 +618,7 @@ midori_panel_append_page (MidoriPanel*    panel,
     {
         scrolled = gtk_scrolled_window_new (NULL, NULL);
         gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled),
-                                        GTK_POLICY_AUTOMATIC,
+                                        GTK_POLICY_NEVER,
                                         GTK_POLICY_AUTOMATIC);
         gtk_widget_set_can_focus (scrolled, TRUE);
         gtk_widget_show (scrolled);

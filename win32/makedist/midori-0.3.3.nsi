@@ -25,13 +25,14 @@ RequestExecutionLevel user ; set execution level for Windows Vista
 !define PRODUCT_BUILD "0"
 !define PRODUCT_VERSION_ID "${PRODUCT_VERSION}.${PRODUCT_BUILD}"
 !define PRODUCT_PUBLISHER "Christian Dywan"
-!define PRODUCT_WEB_SITE "http://www.twotoasts.de/"
+!define PRODUCT_WEB_SITE "http://www.midori-browser.org"
 !define PRODUCT_DIR_REGKEY "Software\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_BROWER_KEY "Software\Clients\StartMenuInternet"
 !define PRODUCT_EXE "$INSTDIR\bin\midori.exe"
 !define UNINSTALL_EXE "$INSTDIR\uninst.exe"
 !define RESOURCEDIR "midori-${PRODUCT_VERSION}"
+!define ICON_THEME "Faenza"
 
 ;;;;;;;;;;;;;;;;;;;;;
 ; Version resource  ;
@@ -40,7 +41,7 @@ VIProductVersion "${PRODUCT_VERSION_ID}"
 VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
 VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
-VIAddVersionKey "LegalCopyright" "Copyright 2009 by Christian Dywan"
+VIAddVersionKey "LegalCopyright" "Copyright 2009-2012 by Christian Dywan"
 VIAddVersionKey "FileDescription" "${PRODUCT_NAME} Installer"
 
 BrandingText "$(^NAME) installer (NSIS ${NSIS_VERSION})"
@@ -122,10 +123,10 @@ Section "!Program Files" SEC01
 	File /r /x "midori" "${RESOURCEDIR}\lib\*"
 
 	SetOutPath "$INSTDIR\share"
-	File /r /x "locale" /x "user" /x "Tango" "${RESOURCEDIR}\share\*"
+	File /r /x "locale" /x "user" /x "${ICON_THEME}" "${RESOURCEDIR}\share\*"
 
-	SetOutPath "$INSTDIR\share\icons\Tango"
-	File "${RESOURCEDIR}\share\icons\Tango\index.theme"
+	SetOutPath "$INSTDIR\share\icons\${ICON_THEME}"
+	File "${RESOURCEDIR}\share\icons\${ICON_THEME}\index.theme"
 
 	SetOutPath "$INSTDIR"
 	CreateShortCut "$INSTDIR\Midori.lnk" "${PRODUCT_EXE}"
@@ -134,6 +135,132 @@ Section "!Program Files" SEC01
 	CreateDirectory "$SMPROGRAMS\$StartmenuFolder"
 	CreateShortCut "$SMPROGRAMS\$StartmenuFolder\Midori.lnk" "${PRODUCT_EXE}"
 	!insertmacro MUI_STARTMENU_WRITE_END
+
+!macro InstallIconThemeRenameSmall OPath IPath
+	File "/oname=16x16\${OPath}.png" "${RESOURCEDIR}\share\icons\${ICON_THEME}\16x16\${IPath}.png"
+	File "/oname=22x22\${OPath}.png" "${RESOURCEDIR}\share\icons\${ICON_THEME}\22x22\${IPath}.png"
+	File "/oname=24x24\${OPath}.png" "${RESOURCEDIR}\share\icons\${ICON_THEME}\24x24\${IPath}.png"
+	File "/oname=32x32\${OPath}.png" "${RESOURCEDIR}\share\icons\${ICON_THEME}\32x32\${IPath}.png"
+!macroend
+
+!macro InstallIconThemeRename OPath IPath
+	!insertmacro InstallIconThemeRenameSmall ${OPath} ${IPath}
+	File "/oname=48x48\${OPath}.png" "${RESOURCEDIR}\share\icons\${ICON_THEME}\48x48\${IPath}.png"
+	File "/oname=scalable\${OPath}.svg" "${RESOURCEDIR}\share\icons\${ICON_THEME}\scalable\${IPath}.svg"
+!macroend
+
+!macro InstallIconThemeSmall IconPath
+	!insertmacro InstallIconThemeRenameSmall ${IconPath} ${IconPath}
+!macroend
+
+!macro InstallIconTheme IconPath
+	!insertmacro InstallIconThemeRename ${IconPath} ${IconPath}
+!macroend
+
+!macro CreateIconThemeSectionsSmall SectionPath
+	CreateDirectory "$INSTDIR\share\icons\${ICON_THEME}\16x16\${SectionPath}"
+	CreateDirectory "$INSTDIR\share\icons\${ICON_THEME}\22x22\${SectionPath}"
+	CreateDirectory "$INSTDIR\share\icons\${ICON_THEME}\24x24\${SectionPath}"
+	CreateDirectory "$INSTDIR\share\icons\${ICON_THEME}\32x32\${SectionPath}"
+!macroend
+
+!macro CreateIconThemeSections SectionPath
+	!insertmacro CreateIconThemeSectionsSmall ${SectionPath}
+	CreateDirectory "$INSTDIR\share\icons\${ICON_THEME}\48x48\${SectionPath}"
+	CreateDirectory "$INSTDIR\share\icons\${ICON_THEME}\scalable\${SectionPath}"
+!macroend
+
+	SetOutPath "$INSTDIR\share\icons\${ICON_THEME}"
+
+	!insertmacro CreateIconThemeSections "actions"
+	#!insertmacro CreateIconThemeSectionsSmall "animations"
+	!insertmacro CreateIconThemeSections "apps"
+	!insertmacro CreateIconThemeSections "categories"
+	!insertmacro CreateIconThemeSections "devices"
+	!insertmacro CreateIconThemeSections "mimetypes"
+	!insertmacro CreateIconThemeSections "places"
+	!insertmacro CreateIconThemeSections "status"
+
+	!insertmacro InstallIconTheme "actions\bookmark-new"
+	!insertmacro InstallIconTheme "actions\document-open"
+	!insertmacro InstallIconTheme "actions\document-open-recent"
+	!insertmacro InstallIconTheme "actions\document-print"
+	!insertmacro InstallIconTheme "actions\document-properties"
+	!insertmacro InstallIconTheme "actions\document-save-as"
+	!insertmacro InstallIconTheme "actions\document-save"
+	!insertmacro InstallIconTheme "actions\edit-clear"
+	!insertmacro InstallIconTheme "actions\edit-copy"
+	!insertmacro InstallIconTheme "actions\edit-cut"
+	!insertmacro InstallIconTheme "actions\edit-delete"
+	!insertmacro InstallIconTheme "actions\edit-find"
+	!insertmacro InstallIconTheme "actions\edit-paste"
+	!insertmacro InstallIconTheme "actions\edit-redo"
+	!insertmacro InstallIconTheme "actions\edit-select-all"
+	!insertmacro InstallIconTheme "actions\edit-undo"
+	!insertmacro InstallIconTheme "actions\folder-new"
+	!insertmacro InstallIconTheme "actions\format-indent-more"
+	!insertmacro InstallIconTheme "actions\go-home"
+	!insertmacro InstallIconTheme "actions\go-jump"
+	!insertmacro InstallIconTheme "actions\go-next"
+	!insertmacro InstallIconTheme "actions\go-previous"
+	!insertmacro InstallIconTheme "actions\gtk-cancel"
+	!insertmacro InstallIconTheme "actions\gtk-edit"
+	!insertmacro InstallIconTheme "actions\gtk-no"
+	!insertmacro InstallIconTheme "actions\gtk-ok"
+	!insertmacro InstallIconTheme "actions\gtk-save"
+	!insertmacro InstallIconTheme "actions\help-about"
+	!insertmacro InstallIconTheme "actions\help-contents"
+	!insertmacro InstallIconTheme "actions\list-add"
+	!insertmacro InstallIconTheme "actions\list-remove"
+	!insertmacro InstallIconTheme "actions\media-skip-backward"
+	!insertmacro InstallIconTheme "actions\media-skip-forward"
+	!insertmacro InstallIconTheme "actions\process-stop"
+	!insertmacro InstallIconTheme "actions\stop"
+	!insertmacro InstallIconTheme "actions\tab-new"
+	!insertmacro InstallIconTheme "actions\tools-check-spelling"
+	!insertmacro InstallIconTheme "actions\view-fullscreen"
+	!insertmacro InstallIconTheme "actions\view-refresh"
+	!insertmacro InstallIconTheme "actions\window-close"
+	!insertmacro InstallIconTheme "actions\window-new"
+	!insertmacro InstallIconTheme "actions\zoom-in"
+	!insertmacro InstallIconTheme "actions\zoom-out"
+
+	#!insertmacro InstallIconThemeSmall "animations\process-working"
+
+	!insertmacro InstallIconTheme "apps\internet-news-reader"
+	!insertmacro InstallIconTheme "apps\midori"
+	!insertmacro InstallIconTheme "apps\preferences-desktop-theme"
+	!insertmacro InstallIconTheme "apps\web-browser"
+
+	!insertmacro InstallIconTheme "categories\gtk-preferences"
+
+	!insertmacro InstallIconTheme "devices\drive-harddisk"
+	!insertmacro InstallIconTheme "devices\media-optical-dvd-rom"
+
+	!insertmacro InstallIconTheme "mimetypes\application-x-shockwave-flash"
+	!insertmacro InstallIconTheme "mimetypes\extension"
+	!insertmacro InstallIconTheme "mimetypes\gtk-file"
+	!insertmacro InstallIconTheme "mimetypes\image-x-generic"
+	!insertmacro InstallIconTheme "mimetypes\package"
+	!insertmacro InstallIconTheme "mimetypes\text-html"
+	!insertmacro InstallIconTheme "mimetypes\text-x-generic"
+	!insertmacro InstallIconTheme "mimetypes\text-x-javascript"
+
+	!insertmacro InstallIconTheme "places\folder-documents"
+	!insertmacro InstallIconTheme "places\folder-downloads"
+	!insertmacro InstallIconTheme "places\folder-music"
+	!insertmacro InstallIconTheme "places\folder-pictures"
+	!insertmacro InstallIconTheme "places\folder"
+	!insertmacro InstallIconTheme "places\folder-videos"
+	!insertmacro InstallIconTheme "places\inode-directory"
+	!insertmacro InstallIconTheme "places\user-bookmarks"
+	!insertmacro InstallIconTheme "places\user-desktop"
+	!insertmacro InstallIconTheme "places\user-home"
+	!insertmacro InstallIconTheme "places\user-trash"
+
+	!insertmacro InstallIconTheme "status\dialog-password"
+	#!insertmacro InstallIconTheme "status\locked"
+
 SectionEnd
 
 Section "Extensions" SEC04
@@ -149,166 +276,6 @@ Section "Language Files" SEC02
 	File /r "${RESOURCEDIR}\share\locale"
 SectionEnd
 
-Section "FAQ" SEC06
-	SectionIn 1
-	SetOutPath "$INSTDIR\share\doc\midori"
-	File "${RESOURCEDIR}\share\doc\midori\faq.css"
-	File "${RESOURCEDIR}\share\doc\midori\faq.html"
-SectionEnd
-
-!macro InstallTangoIconRenameSmall OPath IPath
-	File "/oname=16x16\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\16x16\${IPath}.png"
-	File "/oname=22x22\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\22x22\${IPath}.png"
-	File "/oname=32x32\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\32x32\${IPath}.png"
-!macroend
-
-!macro InstallTangoIconRename OPath IPath
-	!insertmacro InstallTangoIconRenameSmall ${OPath} ${IPath}
-	File "/oname=48x48\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\48x48\${IPath}.png"
-	File /nonfatal "/oname=64x64\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\64x64\${IPath}.png"
-	File /nonfatal "/oname=72x72\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\72x72\${IPath}.png"
-	File /nonfatal "/oname=96x96\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\96x96\${IPath}.png"
-	File /nonfatal "/oname=128x128\${OPath}.png" "${RESOURCEDIR}\share\icons\Tango\128x128\${IPath}.png"
-	File "/oname=scalable\${OPath}.svg" "${RESOURCEDIR}\share\icons\Tango\scalable\${IPath}.svg"
-	File /nonfatal "/oname=scalable\${OPath}.icon" "${RESOURCEDIR}\share\icons\Tango\scalable\${IPath}.icon"
-!macroend
-
-!macro InstallTangoIconSmall IconPath
-	!insertmacro InstallTangoIconRenameSmall ${IconPath} ${IconPath}
-!macroend
-
-!macro InstallTangoIcon IconPath
-	!insertmacro InstallTangoIconRename ${IconPath} ${IconPath}
-!macroend
-
-!macro CreateTangoSectionsSmall SectionPath
-	CreateDirectory "$INSTDIR\share\icons\Tango\16x16\${SectionPath}"
-	CreateDirectory "$INSTDIR\share\icons\Tango\22x22\${SectionPath}"
-	CreateDirectory "$INSTDIR\share\icons\Tango\32x32\${SectionPath}"
-!macroend
-
-!macro CreateTangoSections SectionPath
-	!insertmacro CreateTangoSectionsSmall ${SectionPath}
-	CreateDirectory "$INSTDIR\share\icons\Tango\48x48\${SectionPath}"
-	CreateDirectory "$INSTDIR\share\icons\Tango\64x64\${SectionPath}"
-	CreateDirectory "$INSTDIR\share\icons\Tango\72x72\${SectionPath}"
-	CreateDirectory "$INSTDIR\share\icons\Tango\96x96\${SectionPath}"
-	CreateDirectory "$INSTDIR\share\icons\Tango\128x128\${SectionPath}"
-	CreateDirectory "$INSTDIR\share\icons\Tango\scalable\${SectionPath}"
-!macroend
-
-Section "Tango icons" SEC07
-	SectionIn 1
-	SetOutPath "$INSTDIR\share\icons\Tango"
-
-	!insertmacro CreateTangoSections "actions"
-	!insertmacro CreateTangoSectionsSmall "animations"
-	!insertmacro CreateTangoSections "apps"
-	!insertmacro CreateTangoSections "categories"
-	!insertmacro CreateTangoSections "devices"
-	!insertmacro CreateTangoSections "emblems"
-	!insertmacro CreateTangoSections "emotes"
-	!insertmacro CreateTangoSections "mimetypes"
-	!insertmacro CreateTangoSections "places"
-	!insertmacro CreateTangoSections "status"
-
-	!insertmacro InstallTangoIcon "actions\gtk-add"
-	!insertmacro InstallTangoIcon "actions\gtk-bold"
-	!insertmacro InstallTangoIcon "actions\gtk-cancel"
-	!insertmacro InstallTangoIcon "actions\gtk-cancel"
-	!insertmacro InstallTangoIcon "actions\gtk-clear"
-	!insertmacro InstallTangoIcon "actions\gtk-copy"
-	!insertmacro InstallTangoIcon "actions\gtk-cut"
-	!insertmacro InstallTangoIcon "actions\gtk-delete"
-	!insertmacro InstallTangoIcon "actions\gtk-find"
-	!insertmacro InstallTangoIcon "actions\gtk-fullscreen"
-	!insertmacro InstallTangoIcon "actions\gtk-go-back-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-go-back-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-go-down"
-	!insertmacro InstallTangoIcon "actions\gtk-go-forward-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-go-forward-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-go-up"
-	!insertmacro InstallTangoIcon "actions\gtk-goto-first-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-goto-first-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-goto-last-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-goto-last-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-home"
-	!insertmacro InstallTangoIcon "actions\gtk-indent-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-indent-rtl"
-	!insertmacro InstallTangoIcon "actions\gtk-italic"
-	!insertmacro InstallTangoIcon "actions\gtk-jump-to-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-jump-to-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-media-next-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-media-next-rtl"
-	!insertmacro InstallTangoIcon "actions\gtk-media-previous-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-media-previous-rtl"
-	!insertmacro InstallTangoIcon "actions\gtk-open"
-	!insertmacro InstallTangoIcon "actions\gtk-paste"
-	!insertmacro InstallTangoIcon "actions\gtk-print"
-	!insertmacro InstallTangoIcon "actions\gtk-properties"
-	!insertmacro InstallTangoIcon "actions\gtk-redo-ltr"
-	!insertmacro InstallTangoIcon "actions\gtk-refresh"
-	!insertmacro InstallTangoIcon "actions\gtk-remove"
-	!insertmacro InstallTangoIcon "actions\gtk-save"
-	!insertmacro InstallTangoIcon "actions\gtk-save-as"
-	!insertmacro InstallTangoIcon "actions\gtk-select-all"
-	!insertmacro InstallTangoIcon "actions\gtk-stop"
-	!insertmacro InstallTangoIcon "actions\gtk-underline"
-	!insertmacro InstallTangoIcon "actions\gtk-undo-ltr"
-	!insertmacro InstallTangoIcon "actions\stock_add-bookmark"
-	!insertmacro InstallTangoIcon "actions\stock_new-tab"
-	!insertmacro InstallTangoIcon "actions\stock_new-window"
-	!insertmacro InstallTangoIconSmall "animations\process-working"
-	!insertmacro InstallTangoIcon "apps\gnome-settings-theme"
-	!insertmacro InstallTangoIcon "apps\gtk-help"
-	!insertmacro InstallTangoIcon "apps\terminal"
-	!insertmacro InstallTangoIcon "apps\web-browser"
-	!insertmacro InstallTangoIcon "categories\gtk-preferences"
-	#!insertmacro InstallTangoIcon "cookie-manager"
-	#!insertmacro InstallTangoIcon "document-open-recent"
-	#!insertmacro InstallTangoIcon "extention"
-	#!insertmacro InstallTangoIcon "feed-panel"
-	#!insertmacro InstallTangoIcon "gtk-about"
-	#!insertmacro InstallTangoIcon "gtk-close"
-	#!insertmacro InstallTangoIcon "gtk-convert"
-	#!insertmacro InstallTangoIcon "gtk-dialog-authentication"
-	#!insertmacro InstallTangoIcon "gtk-dnd-multiple"
-	#!insertmacro InstallTangoIcon "gtk-edit"
-	#!insertmacro InstallTangoIcon "gtk-execute"
-	#!insertmacro InstallTangoIcon "gtk-file"
-	#!insertmacro InstallTangoIcon "gtk-index"
-	#!insertmacro InstallTangoIcon "gtk-info"
-	#!insertmacro InstallTangoIcon "gtk-ok"
-	#!insertmacro InstallTangoIcon "gtk-orientation-portait"
-	#!insertmacro InstallTangoIcon "gtk-quit"
-	#!insertmacro InstallTangoIcon "gtk-select-color"
-	#!insertmacro InstallTangoIcon "gtk-select-font"
-	#!insertmacro InstallTangoIcon "gtk-sort-ascending"
-	#!insertmacro InstallTangoIcon "gtk-spell-check"
-	#!insertmacro InstallTangoIcon "gtk-undelete"
-	#!insertmacro InstallTangoIcon "gtk-yes"
-	#!insertmacro InstallTangoIcon "gtk-zoom-100"
-	#!insertmacro InstallTangoIcon "gtk-zoom-in"
-	#!insertmacro InstallTangoIcon "gtk-zoom-out"
-	!insertmacro InstallTangoIcon "mimetypes\gnome-mime-application-x-shockwave-flash"
-	!insertmacro InstallTangoIcon "mimetypes\gnome-mime-image"
-	!insertmacro InstallTangoIcon "mimetypes\package"
-	!insertmacro InstallTangoIcon "mimetypes\stock_script"
-	!insertmacro InstallTangoIcon "mimetypes\vcard"
-	#!insertmacro InstallTangoIcon "news-feed"
-	#!insertmacro InstallTangoIcon "place-holder"
-	!insertmacro InstallTangoIcon "places\gnome-stock-trash"
-	!insertmacro InstallTangoIcon "places\gtk-directory"
-	!insertmacro InstallTangoIcon "places\gtk-network"
-	!insertmacro InstallTangoIcon "status\gtk-dialog-error"
-	!insertmacro InstallTangoIcon "status\gtk-dialog-info"
-	!insertmacro InstallTangoIcon "status\gtk-dialog-warning"
-	!insertmacro InstallTangoIcon "status\gtk-missing-image"
-	!insertmacro InstallTangoIcon "status\network-offline"
-	#!insertmacro InstallTangoIcon "stock_bookmark"
-	#!insertmacro InstallTangoIcon "stock_mail-send"
-	#!insertmacro InstallTangoIcon "tab-panel"
-SectionEnd
 
 Section "Desktop Shortcuts" SEC03
 	SectionIn 1
@@ -407,8 +374,6 @@ SectionEnd
 !insertmacro MUI_DESCRIPTION_TEXT ${SEC03} "Create shortcuts for Midori on the desktop and in the Quicklaunch Bar"
 !insertmacro MUI_DESCRIPTION_TEXT ${SEC04} "Available plugins like 'Advertisement Blocker', 'Form history filler' and 'Mouse Gestures'."
 !insertmacro MUI_DESCRIPTION_TEXT ${SEC05} "Make Midori the default browser."
-!insertmacro MUI_DESCRIPTION_TEXT ${SEC06} "User manual of the Midori application."
-!insertmacro MUI_DESCRIPTION_TEXT ${SEC07} "Better looking icons from the Tango icon theme."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ;;;;;;;;;;;;;;;;;;;;;

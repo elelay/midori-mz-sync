@@ -521,7 +521,7 @@ midori_bookmarks_get_toolbar (MidoriViewable* viewable)
         gtk_toolbar_set_icon_size (GTK_TOOLBAR (toolbar), GTK_ICON_SIZE_BUTTON);
         gtk_toolbar_set_show_arrow (GTK_TOOLBAR (toolbar), FALSE);
         bookmarks->toolbar = toolbar;
-        toolitem = gtk_tool_button_new_from_stock (GTK_STOCK_ADD);
+        toolitem = gtk_tool_button_new_from_stock (STOCK_BOOKMARK_ADD);
         gtk_widget_set_name (GTK_WIDGET (toolitem), "BookmarkAdd");
         gtk_widget_set_tooltip_text (GTK_WIDGET (toolitem),
                                      _("Add a new bookmark"));
@@ -552,7 +552,7 @@ midori_bookmarks_get_toolbar (MidoriViewable* viewable)
         gtk_tool_item_set_expand (toolitem, TRUE);
         gtk_toolbar_insert (GTK_TOOLBAR (toolbar), toolitem, -1);
         gtk_widget_show (GTK_WIDGET (toolitem));
-        toolitem = gtk_tool_button_new_from_stock (GTK_STOCK_DIRECTORY);
+        toolitem = gtk_tool_button_new_from_stock (STOCK_FOLDER_NEW);
         gtk_widget_set_name (GTK_WIDGET (toolitem), "BookmarkFolderAdd");
         gtk_widget_set_tooltip_text (GTK_WIDGET (toolitem),
                                      _("Add a new folder"));
@@ -688,8 +688,11 @@ midori_bookmarks_treeview_render_text_cb (GtkTreeViewColumn* column,
     gtk_tree_model_get (model, iter, 0, &item, -1);
 
     if (item && katze_item_get_name (item))
+    {
         g_object_set (renderer, "markup", NULL,
+                      "ellipsize", PANGO_ELLIPSIZE_END,
                       "text", katze_item_get_name (item), NULL);
+    }
     else
         g_object_set (renderer, "markup", _("<i>Separator</i>"), NULL);
 
@@ -998,19 +1001,14 @@ midori_bookmarks_filter_entry_changed_cb (GtkEntry*        entry,
 {
     if (bookmarks->filter_timeout)
         g_source_remove (bookmarks->filter_timeout);
-    katze_assign (bookmarks->filter, g_strdup (gtk_entry_get_text (entry)));
+
+    if (!g_object_get_data (G_OBJECT (entry), "sokoke_has_default"))
+        katze_assign (bookmarks->filter, g_strdup (gtk_entry_get_text (entry)));
+    else
+        katze_assign (bookmarks->filter, NULL);
+
     bookmarks->filter_timeout = g_timeout_add (COMPLETION_DELAY,
         midori_bookmarks_filter_timeout_cb, bookmarks);
-}
-
-static void
-midori_bookmarks_filter_entry_clear_cb (GtkEntry*        entry,
-                                        gint             icon_pos,
-                                        gint             button,
-                                        MidoriBookmarks* bookmarks)
-{
-    if (icon_pos == GTK_ICON_ENTRY_SECONDARY)
-        gtk_entry_set_text (entry, "");
 }
 
 static void
@@ -1026,14 +1024,8 @@ midori_bookmarks_init (MidoriBookmarks* bookmarks)
     GtkTreeSelection* selection;
 
     /* Create the filter entry */
-    entry = gtk_icon_entry_new ();
-    gtk_icon_entry_set_icon_from_stock (GTK_ICON_ENTRY (entry),
-                                        GTK_ICON_ENTRY_PRIMARY,
-                                        GTK_STOCK_FIND);
-    sokoke_entry_set_clear_button_visible (GTK_ENTRY (entry), TRUE);
-    g_signal_connect (entry, "icon-release",
-        G_CALLBACK (midori_bookmarks_filter_entry_clear_cb), bookmarks);
-    g_signal_connect (entry, "changed",
+    entry = sokoke_search_entry_new (_("Search Bookmarks"));
+    g_signal_connect_after (entry, "changed",
         G_CALLBACK (midori_bookmarks_filter_entry_changed_cb), bookmarks);
     box = gtk_hbox_new (FALSE, 0);
     gtk_box_pack_start (GTK_BOX (box), entry, TRUE, TRUE, 3);
@@ -1046,14 +1038,14 @@ midori_bookmarks_init (MidoriBookmarks* bookmarks)
     gtk_tree_view_set_headers_visible (GTK_TREE_VIEW (treeview), FALSE);
     gtk_tree_view_set_tooltip_column (GTK_TREE_VIEW (treeview), 1);
     column = gtk_tree_view_column_new ();
-    gtk_tree_view_column_set_sizing (column, GTK_TREE_VIEW_COLUMN_AUTOSIZE);
+    gtk_tree_view_column_set_expand (column, TRUE);
     renderer_pixbuf = gtk_cell_renderer_pixbuf_new ();
     gtk_tree_view_column_pack_start (column, renderer_pixbuf, FALSE);
     gtk_tree_view_column_set_cell_data_func (column, renderer_pixbuf,
         (GtkTreeCellDataFunc)midori_bookmarks_treeview_render_icon_cb,
         treeview, NULL);
     renderer_text = gtk_cell_renderer_text_new ();
-    gtk_tree_view_column_pack_start (column, renderer_text, FALSE);
+    gtk_tree_view_column_pack_start (column, renderer_text, TRUE);
     gtk_tree_view_column_set_cell_data_func (column, renderer_text,
         (GtkTreeCellDataFunc)midori_bookmarks_treeview_render_text_cb,
         treeview, NULL);

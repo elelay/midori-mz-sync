@@ -18,15 +18,20 @@ body {
    -webkit-border-radius: 1em;
 }
 
-icon {
+#icon {
    float: left;
    padding-left: 1%;
    padding-top: 1%;
 }
 
+html[dir="rtl"] #icon {
+   float: right;
+   padding-right: 1%;
+}
+
 #main {
    float: right;
-   width: 90%;
+   width: 75%;
 }
 
 h1 {
@@ -38,8 +43,16 @@ h1 {
 }
 
 #logo {
-  position: absolute; right: 15px; bottom: 15px;
-  z-index: -1;
+   position: absolute; bottom: 15px;
+   z-index: -1;
+}
+
+html[dir="ltr"] #logo {
+   right: 15px;
+}
+
+html[dir="rtl"] #logo {
+   left: 15px;
 }
 
 button span,

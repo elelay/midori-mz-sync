@@ -46,8 +46,6 @@ static const GtkTargetEntry tb_editor_dnd_targets[] =
 };
 static const gint tb_editor_dnd_targets_len = G_N_ELEMENTS(tb_editor_dnd_targets);
 
-static void tb_editor_browser_populate_tool_menu_cb(MidoriBrowser *browser, GtkWidget *menu, MidoriExtension *ext);
-
 static void tb_editor_browser_populate_toolbar_menu_cb(MidoriBrowser *browser, GtkWidget *menu,
                                                        MidoriExtension *ext);
 
@@ -58,7 +56,6 @@ static void tb_editor_deactivate_cb(MidoriExtension *extension, MidoriBrowser *b
 {
 	MidoriApp *app = midori_extension_get_app(extension);
 
-	g_signal_handlers_disconnect_by_func(browser, tb_editor_browser_populate_tool_menu_cb, extension);
 	g_signal_handlers_disconnect_by_func(browser, tb_editor_browser_populate_toolbar_menu_cb, extension);
 	g_signal_handlers_disconnect_by_func(extension, tb_editor_deactivate_cb, browser);
 	g_signal_handlers_disconnect_by_func(app, tb_editor_app_add_browser_cb, extension);
@@ -107,7 +104,12 @@ static GSList *tb_editor_array_to_list(const gchar **items)
 	name = items;
 	while (*name != NULL)
 	{
+		#ifdef HAVE_GRANITE
+		/* A "new tab" button is already part of the notebook */
+		if (*name[0] != '\0' && strcmp (*name, "TabNew"))
+		#else
 		if (*name[0] != '\0')
+		#endif
 			list = g_slist_append(list, g_strdup(*name));
 		name++;
 	}
@@ -574,17 +576,6 @@ static void tb_editor_menu_configure_toolbar_activate_cb(GtkWidget *menuitem, Mi
 	g_free(tbw);
 }
 
-static void tb_editor_browser_populate_tool_menu_cb(MidoriBrowser *browser, GtkWidget *menu, MidoriExtension *ext)
-{
-    GtkWidget *menuitem;
-
-    menuitem = gtk_menu_item_new_with_mnemonic (_("Customize _Toolbar..."));
-    g_signal_connect (menuitem, "activate",
-        G_CALLBACK (tb_editor_menu_configure_toolbar_activate_cb), browser);
-    gtk_widget_show (menuitem);
-    gtk_menu_shell_append (GTK_MENU_SHELL (menu), menuitem);
-}
-
 static void tb_editor_browser_populate_toolbar_menu_cb(MidoriBrowser *browser, GtkWidget *menu,
                                                        MidoriExtension *ext)
 {
@@ -594,7 +585,7 @@ static void tb_editor_browser_populate_toolbar_menu_cb(MidoriBrowser *browser, G
     separator = gtk_separator_menu_item_new ();
     gtk_widget_show (separator);
     gtk_menu_shell_append (GTK_MENU_SHELL (menu), separator);
-    menuitem = gtk_menu_item_new_with_mnemonic (_("_Customize..."));
+    menuitem = gtk_menu_item_new_with_mnemonic (_("_Customize Toolbar…"));
     g_signal_connect (menuitem, "activate",
         G_CALLBACK (tb_editor_menu_configure_toolbar_activate_cb), browser);
     gtk_widget_show (menuitem);
@@ -603,7 +594,6 @@ static void tb_editor_browser_populate_toolbar_menu_cb(MidoriBrowser *browser, G
 
 static void tb_editor_app_add_browser_cb(MidoriApp *app, MidoriBrowser *browser, MidoriExtension *ext)
 {
-    g_signal_connect(browser, "populate-tool-menu", G_CALLBACK(tb_editor_browser_populate_tool_menu_cb), ext);
     g_signal_connect(browser, "populate-toolbar-menu", G_CALLBACK(tb_editor_browser_populate_toolbar_menu_cb), ext);
     g_signal_connect(ext, "deactivate", G_CALLBACK(tb_editor_deactivate_cb), browser);
 }

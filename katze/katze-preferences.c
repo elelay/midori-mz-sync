@@ -15,6 +15,13 @@
     #include <config.h>
 #endif
 
+#ifdef HAVE_GRANITE
+    #if HAVE_OSX
+        #error FIXME granite on OSX is not implemented
+    #endif
+    #include <granite.h>
+#endif
+
 #if HAVE_HILDON
     #include "katze-scrolled.h"
     #include <hildon/hildon.h>
@@ -103,11 +110,8 @@ katze_preferences_init (KatzePreferences* preferences)
     gtk_dialog_add_buttons (GTK_DIALOG (preferences),
         GTK_STOCK_HELP, GTK_RESPONSE_HELP,
         NULL);
-    #if GTK_CHECK_VERSION (3, 0, 0)
-    gtk_style_context_add_class (gtk_widget_get_style_context (
-        gtk_dialog_get_widget_for_response (GTK_DIALOG (preferences),
-            GTK_RESPONSE_HELP)), "help_button");
-    #endif
+    katze_widget_add_class (gtk_dialog_get_widget_for_response (
+        GTK_DIALOG (preferences), GTK_RESPONSE_HELP), "help_button");
 
     gtk_dialog_add_buttons (GTK_DIALOG (preferences),
         #if HAVE_HILDON
@@ -202,7 +206,12 @@ katze_preferences_prepare (KatzePreferences* preferences)
     g_signal_connect (priv->scrolled, "destroy",
                       G_CALLBACK (gtk_widget_destroyed), &priv->scrolled);
     #else
+    #ifdef HAVE_GRANITE
+    /* FIXME: granite: should return GtkWidget* like GTK+ */
+    priv->notebook = (GtkWidget*)granite_widgets_static_notebook_new (FALSE);
+    #else
     priv->notebook = gtk_notebook_new ();
+    #endif
     gtk_container_set_border_width (GTK_CONTAINER (priv->notebook), 6);
 
     #if HAVE_OSX
@@ -296,8 +305,14 @@ katze_preferences_add_category (KatzePreferences* preferences,
     priv->sizegroup = gtk_size_group_new (GTK_SIZE_GROUP_HORIZONTAL);
     gtk_widget_show (priv->page);
     gtk_container_set_border_width (GTK_CONTAINER (priv->page), 4);
+    #ifdef HAVE_GRANITE
+    granite_widgets_static_notebook_append_page (
+        GRANITE_WIDGETS_STATIC_NOTEBOOK (priv->notebook),
+        priv->page, GTK_LABEL (gtk_label_new (label)));
+    #else
     gtk_notebook_append_page (GTK_NOTEBOOK (priv->notebook),
                               priv->page, gtk_label_new (label));
+    #endif
     #if HAVE_OSX
     priv->toolbutton = GTK_WIDGET (priv->toolbutton ?
         gtk_radio_tool_button_new_from_widget (

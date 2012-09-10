@@ -277,7 +277,6 @@ proxy_combo_box_changed_cb (GtkComboBox* button,
 
     if (custom_value)
     {
-        #if GTK_CHECK_VERSION (2, 12, 0)
         if (value == custom_value)
             gtk_widget_set_tooltip_text (GTK_WIDGET (button), NULL);
         else
@@ -286,7 +285,6 @@ proxy_combo_box_changed_cb (GtkComboBox* button,
             gtk_widget_set_tooltip_text (GTK_WIDGET (button), custom_text);
             g_free (custom_text);
         }
-        #endif
     }
 }
 #endif
@@ -523,14 +521,8 @@ katze_property_proxy (gpointer     object,
             string = g_strdup (G_PARAM_SPEC_STRING (pspec)->default_value);
         gtk_file_chooser_set_uri (GTK_FILE_CHOOSER (widget),
                                   string ? string : "");
-        #if GTK_CHECK_VERSION (2, 12, 0)
         g_signal_connect (widget, "file-set",
                           G_CALLBACK (proxy_uri_file_set_cb), object);
-        #else
-        if (pspec->flags & G_PARAM_WRITABLE)
-            g_signal_connect (widget, "selection-changed",
-                              G_CALLBACK (proxy_uri_file_set_cb), object);
-        #endif
     }
     else if (type == G_TYPE_PARAM_STRING && (_hint == I_("font")
         || _hint == I_("font-monospace")))
@@ -818,11 +810,10 @@ katze_property_proxy (gpointer     object,
                     G_CALLBACK (proxy_entry_focus_out_event_cb), object);
                 g_object_set_data_full (G_OBJECT (entry), "property",
                                         g_strdup (custom), g_free);
+                gtk_widget_set_tooltip_text (widget, NULL);
             }
-            #if GTK_CHECK_VERSION (2, 12, 0)
             else
                 gtk_widget_set_tooltip_text (widget, custom_text);
-            #endif
 
             g_free (custom_text);
 
@@ -837,10 +828,6 @@ katze_property_proxy (gpointer     object,
         widget = gtk_label_new (gettext (nick));
     g_free (string);
 
-    #if GTK_CHECK_VERSION (2, 12, 0)
-    if (!gtk_widget_get_tooltip_text (widget))
-        gtk_widget_set_tooltip_text (widget, g_param_spec_get_blurb (pspec));
-    #endif
     gtk_widget_set_sensitive (widget, pspec->flags & G_PARAM_WRITABLE);
 
     g_object_set_data_full (G_OBJECT (widget), "property",
@@ -881,16 +868,8 @@ katze_property_label (gpointer     object,
         return gtk_label_new (property);
     }
 
-    #ifdef HAVE_HILDON_2_2
-    if (G_PARAM_SPEC_TYPE (pspec) == G_TYPE_PARAM_ENUM)
-        return gtk_label_new (NULL);
-    #endif
-
     nick = g_param_spec_get_nick (pspec);
     widget = gtk_label_new (nick);
-    #if GTK_CHECK_VERSION (2, 12, 0)
-    gtk_widget_set_tooltip_text (widget, g_param_spec_get_blurb (pspec));
-    #endif
     gtk_misc_set_alignment (GTK_MISC (widget), 0.0, 0.5);
 
     return widget;
@@ -1523,8 +1502,7 @@ katze_load_cached_icon (const gchar* uri,
         filename = g_strdup_printf ("%s%s", checksum, ext ? ext : "");
         g_free (icon_uri);
         g_free (checksum);
-        path = g_build_filename (g_get_user_cache_dir (), PACKAGE_NAME,
-                                 "icons", filename, NULL);
+        path = g_build_filename (midori_paths_get_cache_dir (), "icons", filename, NULL);
         g_free (filename);
         if ((icon = gdk_pixbuf_new_from_file_at_size (path, 16, 16, NULL)))
         {
@@ -1546,6 +1524,13 @@ katze_uri_entry_changed_cb (GtkWidget* entry,
     gboolean valid = midori_uri_is_location (uri);
     if (!valid && g_object_get_data (G_OBJECT (entry), "allow_%s"))
         valid = uri && g_str_has_prefix (uri, "%s");
+    if (!valid)
+        valid = midori_uri_is_ip_address (uri);
+
+    #if GTK_CHECK_VERSION (3, 2, 0)
+    g_object_set_data (G_OBJECT (entry), "invalid", GINT_TO_POINTER (*uri && !valid));
+    gtk_widget_queue_draw (entry);
+    #else
     if (*uri && !valid)
     {
         GdkColor bg_color = { 0 };
@@ -1560,10 +1545,33 @@ katze_uri_entry_changed_cb (GtkWidget* entry,
         gtk_widget_modify_base (entry, GTK_STATE_NORMAL, NULL);
         gtk_widget_modify_text (entry, GTK_STATE_NORMAL, NULL);
     }
+    #endif
 
     if (other_widget != NULL)
         gtk_widget_set_sensitive (other_widget, valid);
 }
+
+#if GTK_CHECK_VERSION (3, 2, 0)
+static gboolean
+katze_uri_entry_draw_cb (GtkWidget* entry,
+                         cairo_t*   cr,
+                         GtkWidget* other_widget)
+{
+    const GdkRGBA color = { 0.9, 0., 0., 1. };
+    double width = gtk_widget_get_allocated_width (entry);
+    double height = gtk_widget_get_allocated_height (entry);
+
+    if (!g_object_get_data (G_OBJECT (entry), "invalid"))
+        return FALSE;
+
+    /* FIXME: error-underline-color requires GtkTextView */
+    gdk_cairo_set_source_rgba (cr, &color);
+
+    pango_cairo_show_error_underline (cr, width * 0.15, height / 1.9,
+        width * 0.75, height / 1.9 / 2);
+    return TRUE;
+}
+#endif
 
 /**
  * katze_uri_entry_new:
@@ -1582,9 +1590,26 @@ GtkWidget*
 katze_uri_entry_new (GtkWidget* other_widget)
 {
     GtkWidget* entry = gtk_entry_new ();
+
+    gtk_entry_set_icon_from_gicon (GTK_ENTRY (entry), GTK_ENTRY_ICON_PRIMARY,
+        g_themed_icon_new_with_default_fallbacks ("text-html-symbolic"));
     g_signal_connect (entry, "changed",
         G_CALLBACK (katze_uri_entry_changed_cb), other_widget);
+    #if GTK_CHECK_VERSION (3, 2, 0)
+    g_signal_connect_after (entry, "draw",
+        G_CALLBACK (katze_uri_entry_draw_cb), other_widget);
+    #endif
     return entry;
+}
+
+void
+katze_widget_add_class (GtkWidget*   widget,
+                        const gchar* class_name)
+{
+    #if GTK_CHECK_VERSION (3,0,0)
+    GtkStyleContext* context = gtk_widget_get_style_context (widget);
+    gtk_style_context_add_class (context, class_name);
+    #endif
 }
 
 /**

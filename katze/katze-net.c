@@ -27,9 +27,6 @@
 struct _KatzeNet
 {
     GObject parent_instance;
-
-    gchar* cache_path;
-    guint cache_size;
 };
 
 struct _KatzeNetClass
@@ -54,35 +51,12 @@ katze_net_class_init (KatzeNetClass* class)
 static void
 katze_net_init (KatzeNet* net)
 {
-    net->cache_path = g_build_filename (g_get_user_cache_dir (),
-                                        PACKAGE_NAME, NULL);
 }
 
 static void
 katze_net_finalize (GObject* object)
 {
-    KatzeNet* net = KATZE_NET (object);
-
-    katze_assign (net->cache_path, NULL);
-
     G_OBJECT_CLASS (katze_net_parent_class)->finalize (object);
-}
-
-static KatzeNet*
-katze_net_new (void)
-{
-    static KatzeNet* net = NULL;
-
-    if (!net)
-    {
-        net = g_object_new (KATZE_TYPE_NET, NULL);
-        /* Since this is a "singleton", keep an extra reference */
-        g_object_ref (net);
-    }
-    else
-        g_object_ref (net);
-
-    return net;
 }
 
 typedef struct
@@ -109,29 +83,28 @@ katze_net_get_cached_path (KatzeNet*    net,
                            const gchar* uri,
                            const gchar* subfolder)
 {
-    gchar* cache_path;
     gchar* checksum;
     gchar* extension;
     gchar* cached_filename;
     gchar* cached_path;
 
-    net = katze_net_new ();
-
-    if (subfolder)
-        cache_path = g_build_filename (net->cache_path, subfolder, NULL);
-    else
-        cache_path = net->cache_path;
-    katze_mkdir_with_parents (cache_path, 0700);
     checksum = g_compute_checksum_for_string (G_CHECKSUM_MD5, uri, -1);
-
     extension = g_strrstr (uri, ".");
     cached_filename = g_strdup_printf ("%s%s", checksum,
                                        extension ? extension : "");
     g_free (checksum);
-    cached_path = g_build_filename (cache_path, cached_filename, NULL);
-    g_free (cached_filename);
+
     if (subfolder)
+    {
+        gchar* cache_path = g_build_filename (midori_paths_get_cache_dir (), subfolder, NULL);
+        katze_mkdir_with_parents (cache_path, 0700);
+        cached_path = g_build_filename (cache_path, cached_filename, NULL);
         g_free (cache_path);
+    }
+    else
+        cached_path = g_build_filename (midori_paths_get_cache_dir (), cached_filename, NULL);
+
+    g_free (cached_filename);
     return cached_path;
 }
 

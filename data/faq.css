@@ -8,29 +8,66 @@ Stylesheet for Midori's documentation based on a version of Enrico Troeger.
 
 @media screen {
 
-    body {
-        background-color: #f6fff3;
-        color: #404040;
-        margin-left: 0.4em;
-        width: 60em;
-        font-size: 90%;
+    html, body {
+        width: 100% !important;
+        height: 100% !important;
+        overflow: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
 
-    a {
-        color: #013100;
+    * {
+        background: #f6fff3 !important;
+        color: #404040 !important;
+        font-size: 14pt !important;
+        font-family: serif !important;
+        text-align: justify !important;
+        line-height: 1.4em !important;
+        word-spacing: 0.4mm !important;
+        letter-spacing: 0.2mm !important;
+        -webkit-column-count: auto !important;
+        -webkit-column-width: auto !important;
+        -webkit-box-shadow: none !important;
+        width: auto !important;
+        word-wrap: break-word !important;
+        white-space: pre-line !important;
     }
 
-    a:visited {
-        color: #7E558E;
+    div, p {
+        padding: 5pt !important;
+    }
+
+    body, li {
+        padding-left: 5pt !important;
+    }
+
+    img, *[accesskey], form *, form, iframe,
+    *[id^=navigation], *[id$=navigation], *[id*=navigation], .collapsed, .expanded {
+        display: none !important
+    }
+
+    /* FIXME: we want "images bigger than 50px here" */
+    img[width] {
+        display: inline !important
+    }
+
+    :link, :link * {
+        color: #013100 !important;
+        text-decoration: underline !important;
+    }
+
+    :visited, :visited * {
+        color: #7E558E !important;
+        text-decoration: underline !important;
     }
 
     a:hover {
-        text-decoration: none;
+        text-decoration: none !important;
     }
 
     h1, h2, h3 {
-        font-family: sans-serif;
-        color: #002a00;
+        font-family: serif !important;
+        color: #002a00 !important;
     }
 
     h1 {

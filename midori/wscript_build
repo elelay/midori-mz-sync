@@ -8,7 +8,7 @@ import platform
 progressive = True
 libs = 'M UNIQUE LIBSOUP GMODULE GTHREAD LIBIDN GIO GTK SQLITE ' \
        'LIBNOTIFY WEBKIT JAVASCRIPTCOREGTK LIBXML X11 XSS WS2_32 HILDON' \
-       'HILDON_FM GRANITE'
+       'HILDON_FM GCR GRANITE ZEITGEIST'
 
 if progressive or Options.commands['check']:
     obj = bld.new_task_gen ('cc', 'staticlib')
@@ -19,7 +19,7 @@ if progressive or Options.commands['check']:
     obj.add_marshal_file ('marshal.list', 'midori_cclosure_marshal')
     obj.install_path = None
     obj.vapi_dirs = '../midori ../katze'
-    obj.packages = 'glib-2.0 gio-2.0 libsoup-2.4'
+    obj.packages = 'glib-2.0 gio-2.0 libsoup-2.4 posix'
     if bld.env['HAVE_GTK3']:
         obj.packages += ' gtk+-3.0 webkitgtk-3.0'
     else:

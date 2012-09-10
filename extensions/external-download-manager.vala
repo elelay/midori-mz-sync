@@ -35,9 +35,9 @@ namespace EDM {
         private GLib.PtrArray download_managers =  new GLib.PtrArray ();
 
         public bool download_requested (Midori.View view, WebKit.Download download) {
-            if (download.get_data<void*> ("save-as-download") == null
-             && download.get_data<void*> ("open-download") == null
-             && download.get_data<void*> ("cancel-download") == null) {
+            Midori.DownloadType download_type = download.get_data<Midori.DownloadType> ("midori-download-type");
+
+            if (download_type == Midori.DownloadType.SAVE) {
                 var dlReq = new DownloadRequest ();
                 dlReq.uri = download.get_uri ();
 

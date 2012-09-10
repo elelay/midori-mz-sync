@@ -16,6 +16,10 @@
 
 #include <katze/katze.h>
 
+#ifdef HAVE_GRANITE
+    #include <granite/granite.h>
+#endif
+
 G_BEGIN_DECLS
 
 #define MIDORI_LOAD_PROVISIONAL WEBKIT_LOAD_PROVISIONAL
@@ -52,6 +56,15 @@ midori_security_get_type (void) G_GNUC_CONST;
 
 #define MIDORI_TYPE_SECURITY \
     (midori_security_get_type ())
+
+typedef enum
+{
+    MIDORI_DOWNLOAD_CANCEL,
+    MIDORI_DOWNLOAD_OPEN,
+    MIDORI_DOWNLOAD_SAVE,
+    MIDORI_DOWNLOAD_SAVE_AS,
+    MIDORI_DOWNLOAD_OPEN_IN_VIEWER,
+} MidoriDownloadType;
 
 #define MIDORI_VIEW(obj) \
     (G_TYPE_CHECK_INSTANCE_CAST ((obj), MIDORI_TYPE_VIEW, MidoriView))
@@ -142,8 +155,17 @@ midori_view_get_tab_menu               (MidoriView*        view);
 PangoEllipsizeMode
 midori_view_get_label_ellipsize        (MidoriView*        view);
 
+#ifdef HAVE_GRANITE
+GraniteWidgetsTab*
+midori_view_get_tab                    (MidoriView*        view);
+
+void
+midori_view_set_tab                    (MidoriView*        view,
+                                        GraniteWidgetsTab* tab);
+#else
 GtkWidget*
 midori_view_get_proxy_tab_label        (MidoriView*        view);
+#endif
 
 KatzeItem*
 midori_view_get_proxy_item             (MidoriView*        view);
@@ -160,9 +182,6 @@ midori_view_can_zoom_out               (MidoriView*        view);
 void
 midori_view_set_zoom_level             (MidoriView*        view,
                                         gfloat             zoom_level);
-
-gboolean
-midori_view_can_reload                 (MidoriView*        view);
 
 void
 midori_view_reload                     (MidoriView*        view,
@@ -197,9 +216,6 @@ midori_view_get_previous_page          (MidoriView*        view);
 const gchar*
 midori_view_get_next_page              (MidoriView*        view);
 
-gboolean
-midori_view_can_print                  (MidoriView*        view);
-
 void
 midori_view_print                      (MidoriView*        view);
 
@@ -213,9 +229,6 @@ gchar*
 midori_view_save_source                (MidoriView*        view,
                                         const gchar*       uri,
                                         const gchar*       outfile);
-
-gboolean
-midori_view_can_find                   (MidoriView*        view);
 
 void
 midori_view_unmark_text_matches        (MidoriView*        view);
@@ -267,10 +280,6 @@ midori_view_add_info_bar               (MidoriView*        view,
                                         gpointer           user_data,
                                         const gchar*       first_button_text,
                                         ...);
-
-void
-midori_view_save_speed_dial_config     (MidoriView*        view,
-                                        GKeyFile*          key_file);
 
 const gchar*
 midori_view_fallback_extension         (MidoriView*        view,

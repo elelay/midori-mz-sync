@@ -624,11 +624,14 @@ midori_history_treeview_render_text_cb (GtkTreeViewColumn* column,
 
     if (KATZE_ITEM_IS_BOOKMARK (item))
         g_object_set (renderer, "markup", NULL,
+                      "ellipsize", PANGO_ELLIPSIZE_END,
                       "text", katze_item_get_name (item), NULL);
     else if (KATZE_ITEM_IS_FOLDER (item))
     {
         gchar* formatted = midori_history_format_date (item);
-        g_object_set (renderer, "markup", NULL, "text", formatted, NULL);
+        g_object_set (renderer, "markup", NULL, "text", formatted,
+                      "ellipsize", PANGO_ELLIPSIZE_END,
+                      NULL);
         g_free (formatted);
     }
     else
@@ -964,17 +967,11 @@ midori_history_filter_entry_changed_cb (GtkEntry*      entry,
         g_source_remove (history->filter_timeout);
     history->filter_timeout = g_timeout_add (COMPLETION_DELAY,
         midori_history_filter_timeout_cb, history);
-    katze_assign (history->filter, g_strdup (gtk_entry_get_text (entry)));
-}
 
-static void
-midori_history_filter_entry_clear_cb (GtkEntry*      entry,
-                                      gint           icon_pos,
-                                      gint           button,
-                                      MidoriHistory* history)
-{
-    if (icon_pos == GTK_ICON_ENTRY_SECONDARY)
-        gtk_entry_set_text (entry, "");
+    if (!g_object_get_data (G_OBJECT (entry), "sokoke_has_default"))
+        katze_assign (history->filter, g_strdup (gtk_entry_get_text (entry)));
+    else
+        katze_assign (history->filter, NULL);
 }
 
 static void
@@ -997,14 +994,8 @@ midori_history_init (MidoriHistory* history)
     GtkTreeSelection* selection;
 
     /* Create the filter entry */
-    entry = gtk_icon_entry_new ();
-    gtk_icon_entry_set_icon_from_stock (GTK_ICON_ENTRY (entry),
-                                        GTK_ICON_ENTRY_PRIMARY,
-                                        GTK_STOCK_FIND);
-    sokoke_entry_set_clear_button_visible (GTK_ENTRY (entry), TRUE);
-    g_signal_connect (entry, "icon-release",
-        G_CALLBACK (midori_history_filter_entry_clear_cb), history);
-    g_signal_connect (entry, "changed",
+    entry = sokoke_search_entry_new (_("Search History"));
+    g_signal_connect_after (entry, "changed",
         G_CALLBACK (midori_history_filter_entry_changed_cb), history);
     box = gtk_hbox_new (FALSE, 0);
     gtk_box_pack_start (GTK_BOX (box), entry, TRUE, TRUE, 3);
@@ -1017,14 +1008,14 @@ midori_history_init (MidoriHistory* history)
     gtk_tree_view_set_headers_visible (GTK_TREE_VIEW (treeview), FALSE);
     gtk_tree_view_set_tooltip_column (GTK_TREE_VIEW (treeview), 1);
     column = gtk_tree_view_column_new ();
-    gtk_tree_view_column_set_sizing (column, GTK_TREE_VIEW_COLUMN_AUTOSIZE);
+    gtk_tree_view_column_set_expand (column, TRUE);
     renderer_pixbuf = gtk_cell_renderer_pixbuf_new ();
     gtk_tree_view_column_pack_start (column, renderer_pixbuf, FALSE);
     gtk_tree_view_column_set_cell_data_func (column, renderer_pixbuf,
         (GtkTreeCellDataFunc)midori_history_treeview_render_icon_cb,
         treeview, NULL);
     renderer_text = gtk_cell_renderer_text_new ();
-    gtk_tree_view_column_pack_start (column, renderer_text, FALSE);
+    gtk_tree_view_column_pack_start (column, renderer_text, TRUE);
     gtk_tree_view_column_set_cell_data_func (column, renderer_text,
         (GtkTreeCellDataFunc)midori_history_treeview_render_text_cb,
         treeview, NULL);

@@ -50,27 +50,16 @@ midori_findbar_set_icon (MidoriFindbar*       findbar,
                          GtkIconEntryPosition icon_pos,
                          const gchar*         icon_name)
 {
-    #if !HAVE_HILDON
-    GdkScreen* screen = gtk_widget_get_screen (findbar->find_text);
-    GtkIconTheme* icon_theme = gtk_icon_theme_get_for_screen (screen);
-    gchar* symbolic_icon_name;
-
-    if (icon_name == NULL)
+    if (icon_name != NULL)
     {
-        gtk_icon_entry_set_icon_from_icon_name (GTK_ICON_ENTRY (findbar->find_text),
-                                                icon_pos, NULL);
-        return;
+        gchar* symbolic_icon_name = g_strconcat (icon_name, "-symbolic", NULL);
+        gtk_entry_set_icon_from_gicon (GTK_ENTRY (findbar->find_text), icon_pos,
+            g_themed_icon_new_with_default_fallbacks (symbolic_icon_name));
+        g_free (symbolic_icon_name);
     }
-
-    symbolic_icon_name = g_strconcat (icon_name, "-symbolic", NULL);
-    if (gtk_icon_theme_has_icon (icon_theme, symbolic_icon_name))
-        gtk_icon_entry_set_icon_from_icon_name (GTK_ICON_ENTRY (findbar->find_text),
-                                                icon_pos, symbolic_icon_name);
     else
         gtk_icon_entry_set_icon_from_icon_name (GTK_ICON_ENTRY (findbar->find_text),
-                                                icon_pos, icon_name);
-    g_free (symbolic_icon_name);
-    #endif
+                                                icon_pos, NULL);
 }
 
 static void
@@ -102,18 +91,6 @@ midori_findbar_find_key_press_event_cb (MidoriFindbar* findbar,
     }
 
     return FALSE;
-}
-
-static void
-midori_findbar_entry_clear_icon_released_cb (GtkIconEntry* entry,
-                                             gint          icon_pos,
-                                             gint          button,
-                                             MidoriFindbar*findbar)
-{
-    if (icon_pos == GTK_ICON_ENTRY_SECONDARY)
-    {
-        midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_PRIMARY, "edit-find");
-    }
 }
 
 static gboolean
@@ -191,7 +168,7 @@ midori_findbar_invoke (MidoriFindbar* findbar)
         GtkWidget* view = midori_browser_get_current_tab (browser);
         const gchar* text;
 
-        midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_PRIMARY, "edit-find");
+        midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_PRIMARY, STOCK_EDIT_FIND);
         gtk_widget_show (GTK_WIDGET (findbar->find_case));
         gtk_widget_show (GTK_WIDGET (findbar->find_highlight));
         gtk_widget_show (GTK_WIDGET (findbar->find_close));
@@ -233,7 +210,7 @@ midori_findbar_preedit_changed_cb (GtkWidget*     entry,
     midori_view_unmark_text_matches (MIDORI_VIEW (view));
     if (g_utf8_strlen (preedit, -1) >= 1)
     {
-        midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_SECONDARY, "edit-clear");
+        midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_SECONDARY, STOCK_EDIT_CLEAR);
         midori_findbar_find_text (findbar, preedit, TRUE);
     }
     else
@@ -274,10 +251,7 @@ midori_findbar_init (MidoriFindbar* findbar)
     GtkToolItem* toolitem;
 
     gtk_widget_set_name (GTK_WIDGET (findbar), "MidoriFindbar");
-    #if GTK_CHECK_VERSION (3, 0, 0)
-    gtk_style_context_add_class (
-        gtk_widget_get_style_context (GTK_WIDGET (findbar)), "bottom-toolbar");
-    #endif
+    katze_widget_add_class (GTK_WIDGET (findbar), "bottom-toolbar");
     gtk_toolbar_set_icon_size (GTK_TOOLBAR (findbar), GTK_ICON_SIZE_MENU);
     gtk_toolbar_set_style (GTK_TOOLBAR (findbar), GTK_TOOLBAR_BOTH_HORIZ);
     gtk_toolbar_set_show_arrow (GTK_TOOLBAR (findbar), FALSE);
@@ -290,11 +264,7 @@ midori_findbar_init (MidoriFindbar* findbar)
         /* i18n: A panel at the bottom, to search text in pages */
         gtk_label_new_with_mnemonic (_("_Inline Find:")));
     gtk_toolbar_insert (GTK_TOOLBAR (findbar), toolitem, -1);
-    findbar->find_text = gtk_icon_entry_new ();
-    midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_PRIMARY, "edit-find");
-    sokoke_entry_set_clear_button_visible (GTK_ENTRY (findbar->find_text), TRUE);
-    g_signal_connect (findbar->find_text, "icon-release",
-        G_CALLBACK (midori_findbar_entry_clear_icon_released_cb), findbar);
+    findbar->find_text = sokoke_search_entry_new (NULL);
     g_signal_connect (findbar->find_text, "activate",
         G_CALLBACK (midori_findbar_next_activate_cb), findbar);
     g_signal_connect (findbar->find_text, "preedit-changed",
@@ -370,7 +340,7 @@ midori_findbar_search_text (MidoriFindbar* findbar,
     gboolean case_sensitive;
     gboolean highlight;
 
-    midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_PRIMARY, found ? "edit-find" : "stop");
+    midori_findbar_set_icon (findbar, GTK_ICON_ENTRY_PRIMARY, found ? STOCK_EDIT_FIND : STOCK_STOP);
 
     if (typing)
     {

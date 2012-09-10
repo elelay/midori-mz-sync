@@ -38,6 +38,16 @@ test_input (const gchar* input,
                              "token", "se", NULL);
         katze_array_add_item (search_engines, item);
         g_object_unref (item);
+        item = g_object_new (KATZE_TYPE_ITEM,
+                             "uri", "ddg.gg",
+                             "token", "dd", NULL);
+        katze_array_add_item (search_engines, item);
+        g_object_unref (item);
+        item = g_object_new (KATZE_TYPE_ITEM,
+                             "uri", "google.com",
+                             "token", "d", NULL);
+        katze_array_add_item (search_engines, item);
+        g_object_unref (item);
     }
 
     uri = sokoke_magic_uri (input);
@@ -160,6 +170,8 @@ static void
 magic_uri_search (void)
 {
     test_input ("sm midori", SM "midori");
+    test_input ("d midori browser", "google.com" "midori%20browser");
+    test_input ("dd midori browser", "ddg.gg" "midori%20browser");
     test_input ("sm cats dogs", SM "cats%20dogs");
     test_input ("se cats dogs", SM "cats%20dogs");
     test_input ("dict midori", NULL);
@@ -237,6 +249,22 @@ magic_uri_fingerprint (void)
     g_assert_cmpint (midori_uri_get_fingerprint (uri, NULL, NULL), ==, G_MAXINT);
     uri = "http://midori-0.4.1.tar.bz2#abcdefg";
     g_assert_cmpint (midori_uri_get_fingerprint (uri, NULL, NULL), ==, G_MAXINT);
+    uri = "http://midori-0.4.1.tar.bz2";
+    g_assert_cmpint (midori_uri_get_fingerprint (uri, NULL, NULL), ==, G_MAXINT);
+}
+
+static void
+magic_uri_ip (void)
+{
+    g_assert (midori_uri_is_ip_address ("192.168.1.1"));
+    g_assert (midori_uri_is_ip_address ("192.168.1.1:1234"));
+    g_assert (!midori_uri_is_ip_address ("0.168.1.1"));
+    g_assert (midori_uri_is_ip_address ("user@192.168.1.1"));
+    g_assert (midori_uri_is_ip_address ("user:password@192.168.1.1"));
+    g_assert (midori_uri_is_ip_address ("2001:0db8:85a3:0000:0000:8a2e:0370:7334"));
+    g_assert (midori_uri_is_ip_address ("fe80:0:0:0:202:b3ff:fe1e:8329"));
+    g_assert (midori_uri_is_ip_address ("fe80::202:b3ff:fe1e:8329"));
+    g_assert (midori_uri_is_ip_address ("fe80::76e5:bff:fe04:38e0/64"));
 }
 
 static void
@@ -287,13 +315,55 @@ magic_uri_prefetch (void)
     g_assert (!sokoke_prefetch_uri (NULL, "javascript: alert()", NULL, NULL));
 }
 
+static void
+magic_uri_commands (void)
+{
+    typedef struct
+    {
+        const gchar* command;
+        gboolean quote;
+        const gchar* expected;
+    } CommandItem;
+
+    static const CommandItem commands[] = {
+        { "midori", TRUE, NULL },
+        { "/usr/bin/midori", TRUE, NULL },
+        { "C:/Program Files/Midori/bin/midori.exe", TRUE, NULL },
+        { "C:/Programme/Midori/bin/midori.exe", TRUE, NULL },
+    };
+    static const CommandItem arguments[] = {
+        { "-a 'http://lunduke.com/?p=3606'", FALSE, NULL },
+        { "about:private", FALSE, NULL },
+    };
+    guint i, j;
+
+    for (i = 0; i < G_N_ELEMENTS (commands); i++)
+        for (j = 0; j < G_N_ELEMENTS (arguments); j++)
+        {
+            gchar* input = g_strconcat (commands[i].command, " ", arguments[j].command, NULL);
+            gchar* ce = commands[i].expected ? commands[i].expected
+             : g_strconcat ("'", commands[i].command, "'", NULL);
+            gchar* ae = arguments[j].expected ? arguments[j].expected
+              : (arguments[j].quote ? g_strconcat ("'", arguments[j].command, "'", NULL)
+              : g_strdup (arguments[j].command));
+            gchar* expected = g_strconcat (ce, " ", ae, NULL);
+            gchar* result = sokoke_prepare_command (commands[i].command,
+                commands[i].quote, arguments[j].command, arguments[j].quote);
+            katze_assert_str_equal (input, result, expected);
+            g_free (input);
+            g_free (ce);
+            g_free (ae);
+            g_free (expected);
+            g_free (result);
+        }
+}
+
 int
 main (int    argc,
       char** argv)
 {
-    midori_app_setup (argv);
     g_test_init (&argc, &argv, NULL);
-    gtk_init_check (&argc, &argv);
+    midori_app_setup (&argc, &argv, NULL, NULL);
 
     g_test_add_func ("/magic-uri/uri", magic_uri_uri);
     g_test_add_func ("/magic-uri/idn", magic_uri_idn);
@@ -301,8 +371,10 @@ main (int    argc,
     g_test_add_func ("/magic-uri/pseudo", magic_uri_pseudo);
     g_test_add_func ("/magic-uri/performance", magic_uri_performance);
     g_test_add_func ("/magic-uri/fingerprint", magic_uri_fingerprint);
+    g_test_add_func ("/magic-uri/ip", magic_uri_ip);
     g_test_add_func ("/magic-uri/format", magic_uri_format);
     g_test_add_func ("/magic-uri/prefetch", magic_uri_prefetch);
+    g_test_add_func ("/magic-uri/commands", magic_uri_commands);
 
     return g_test_run ();
 }

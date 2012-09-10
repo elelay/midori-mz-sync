@@ -159,6 +159,9 @@ midori_browser_page_num               (MidoriBrowser*     browser,
 GList*
 midori_browser_get_tabs               (MidoriBrowser*     browser);
 
+gint
+midori_browser_get_n_pages            (MidoriBrowser*     browser);
+
 KatzeArray*
 midori_browser_get_proxy_items        (MidoriBrowser*     browser);
 
@@ -176,6 +179,11 @@ midori_browser_get_toolbar_actions    (MidoriBrowser*     browser);
 
 MidoriWebSettings*
 midori_browser_get_settings           (MidoriBrowser*     browser);
+
+void
+midori_browser_update_history         (KatzeItem*         item,
+                                       const gchar*       type,
+                                       const gchar*       event);
 
 G_END_DECLS
 
