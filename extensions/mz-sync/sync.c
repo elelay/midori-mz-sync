@@ -643,6 +643,7 @@ gboolean set_user(SYNC_CTX* s_ctx,  const char* server_url, const char* user, co
 	gboolean ret;
 	GError* tmp;
 	
+	tmp = NULL;
 	// verify user exists
 	if(!user_exists(s_ctx, enc_user, server_url, &tmp)){
 		g_propagate_prefixed_error(err, tmp, "can't set user: user %s doesn't exist on server %s",user, server_url);
