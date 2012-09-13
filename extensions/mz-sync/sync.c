@@ -19,7 +19,8 @@
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
 #include <openssl/bio.h>
-
+#include <openssl/rand.h>
+#include <openssl/err.h>
 
 #include "decode.h"
 #include "js.h"
@@ -37,15 +38,22 @@ my_sync_error_quark (void)
 // internal functions
 char* get_sync_node(SYNC_CTX* s_ctx, const char* username, const char* server_url, GError** err);
 GPtrArray* wbo_list_from_json(SYNC_CTX* s_ctx, const char* body, gsize len, GError** err);
-unsigned char** regen_key_hmac(const char* username, gsize username_len, const char* user_key, GError** err);
-char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac, WBO* w, GError** err);
-GPtrArray* list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, GError** err);
+unsigned char** generate_bulk_key(GError** err);
+gboolean refresh_bulk_keys(SYNC_CTX* ctx, GError** err);
+guchar** decrypt_bulk_keys(SYNC_CTX* ctx, const guchar* master_key, const guchar* master_hmac, WBO* keys, GError** err);
+const char* encrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac, const WBO* w, GError** err);
+char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac, const WBO* w, GError** err);
+JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, GError** err);
 GPtrArray* get_collection_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, GError** err);
+WBO* get_record_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, const char* id, GError** err);
 gboolean create_collection_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, GError** err);
-void wbo_free(WBO* itm);
+gboolean delete_collection_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, GError** err);
+gboolean add_wbos_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, WBO* wbos, int cnt, GError** err);
 void sync_item_free(SyncItem* itm);
 void sync_folder_free(SYNC_FOLDER* f);
 void sync_bookmark_free(SYNC_BOOKMARK* b);
+gboolean create_metaglobal(SYNC_CTX* s_ctx, GError** err);
+gboolean create_cryptokeys(SYNC_CTX* s_ctx, const char* master_key, GError** err);
 
 void sync_item_free(SyncItem* itm){
 	g_free((gpointer)itm->id);
@@ -86,6 +94,105 @@ void wbo_free(WBO* itm){
 	g_free((gpointer)itm->payload);
 	g_free(itm);
 }
+                                            
+const gchar* wbo_to_json(SYNC_CTX* s_ctx, WBO* wbo, GError** err){
+	const gchar* ret;
+	JSObjectRef oref = js_create_empty_object(s_ctx->ctx);
+	
+	if(!set_string_prop(s_ctx->ctx, oref, "id", wbo->id, err)){
+		return NULL;
+	}
+	if(!set_double_prop(s_ctx->ctx, oref, "modified", wbo->modified, err)){
+		return NULL;
+	}
+	//if(wbo->sortindex != INT_MAX){
+	//	set_int_property(s_ctx->ctx, "sortindex", wbo->sortindex);
+	//}
+	if(!set_string_prop(s_ctx->ctx, oref, "payload", wbo->payload, err)){
+		return NULL;
+	}
+	ret = js_to_json(s_ctx->ctx, oref);
+	return ret;
+}
+
+WBO* wbo_from_js(SYNC_CTX* s_ctx, JSObjectRef o, int i, GError** err){
+	WBO * mywbo;
+	GError* tmp_error = NULL;
+	
+	mywbo = g_malloc(sizeof(WBO));
+	
+	mywbo->id = get_string_prop(s_ctx->ctx, o,"id", &tmp_error);
+	
+	if(tmp_error != NULL){
+		g_set_error(err,
+			MY_SYNC_ERROR,
+			MY_SYNC_ERROR_FORMAT,
+			"can't parse collection[%i].id : %s\n",i, strdup(tmp_error->message));
+		g_clear_error(&tmp_error);
+		return NULL;
+	}
+	
+	mywbo->modified = get_double_prop(s_ctx->ctx, o, "modified", &tmp_error);
+	
+	if(tmp_error != NULL){
+		g_set_error(err,
+			MY_SYNC_ERROR,
+			MY_SYNC_ERROR_FORMAT,
+			"can't parse collection[%i].modified : %s\n",i ,strdup(tmp_error->message));
+		g_clear_error(&tmp_error);
+		return NULL;
+	}
+	
+	mywbo->sortindex = get_int_prop(s_ctx->ctx, o, "sortindex", &tmp_error);
+	
+	if(tmp_error != NULL){
+		if(tmp_error->code == MY_JS_ERROR_NO_SUCH_VALUE){
+			// simply missing, not too bad
+			g_clear_error(&tmp_error);
+			mywbo->sortindex = INT_MAX;
+			
+		}else{
+			g_set_error(err,
+				MY_SYNC_ERROR,
+				MY_SYNC_ERROR_FORMAT,
+				"can't parse collection[%i].sortindex : %s\n",i, tmp_error->message);
+			g_clear_error(&tmp_error);
+			return NULL;
+		}
+	}
+	
+	mywbo->payload = get_string_prop(s_ctx->ctx, o, "payload", &tmp_error);
+	
+	if(tmp_error != NULL){
+		g_set_error(err,
+			MY_SYNC_ERROR,
+			MY_SYNC_ERROR_FORMAT,
+			"can't parse collection[%i].payload : %s\n",i, strdup(tmp_error->message));
+		g_clear_error(&tmp_error);
+		return NULL;
+	}
+	
+	mywbo->ttl = get_int_prop(s_ctx->ctx, o, "ttl", &tmp_error);
+	
+	if(tmp_error != NULL){
+		if(tmp_error->code == MY_JS_ERROR_NO_SUCH_VALUE){
+			// simply missing, not too bad
+			g_clear_error(&tmp_error);
+			mywbo->ttl = 0;
+			
+		}else{
+			g_set_error(err,
+				MY_SYNC_ERROR,
+				MY_SYNC_ERROR_FORMAT,
+				"can't parse collection[%i].ttl : %s\n",i, tmp_error->message);
+			g_clear_error(&tmp_error);
+			return NULL;
+		}
+	}
+	
+	return mywbo;
+
+}
 
 GPtrArray* wbo_list_from_json(SYNC_CTX* s_ctx, const char* body, gsize len, GError** err){
 	
@@ -121,77 +228,11 @@ GPtrArray* wbo_list_from_json(SYNC_CTX* s_ctx, const char* body, gsize len, GErr
 					return NULL;
 				} else {
 					JSObjectRef o = JSValueToObject(s_ctx->ctx, jsv,NULL);
-					mywbo = g_malloc(sizeof(WBO));
-					
-					mywbo->id = get_string_prop(s_ctx->ctx, o,"id", &tmp_error);
-					
-					if(tmp_error != NULL){
-						g_set_error(err,
-							MY_SYNC_ERROR,
-							MY_SYNC_ERROR_FORMAT,
-							"can't parse collection[%i].id : %s\n",i, strdup(tmp_error->message));
-						g_clear_error(&tmp_error);
+					mywbo = wbo_from_js(s_ctx, o, i, &tmp_error);
+					if(mywbo == NULL){
+						g_propagate_error(err, tmp_error);
 						return NULL;
 					}
-					
-					mywbo->modified = get_double_prop(s_ctx->ctx, o, "modified", &tmp_error);
-					
-					if(tmp_error != NULL){
-						g_set_error(err,
-							MY_SYNC_ERROR,
-							MY_SYNC_ERROR_FORMAT,
-							"can't parse collection[%i].modified : %s\n",i ,strdup(tmp_error->message));
-						g_clear_error(&tmp_error);
-						return NULL;
-					}
-					
-					mywbo->sortindex = get_int_prop(s_ctx->ctx, o, "sortindex", &tmp_error);
-					
-					if(tmp_error != NULL){
-						if(tmp_error->code == MY_JS_ERROR_NO_SUCH_VALUE){
-							// simply missing, not too bad
-							g_clear_error(&tmp_error);
-							mywbo->sortindex = INT_MAX;
-							
-						}else{
-							g_set_error(err,
-								MY_SYNC_ERROR,
-								MY_SYNC_ERROR_FORMAT,
-								"can't parse collection[%i].sortindex : %s\n",i, tmp_error->message);
-							g_clear_error(&tmp_error);
-							return NULL;
-						}
-					}
-					
-					mywbo->payload = get_string_prop(s_ctx->ctx, o, "payload", &tmp_error);
-					
-					if(tmp_error != NULL){
-						g_set_error(err,
-							MY_SYNC_ERROR,
-							MY_SYNC_ERROR_FORMAT,
-							"can't parse collection[%i].payload : %s\n",i, strdup(tmp_error->message));
-						g_clear_error(&tmp_error);
-						return NULL;
-					}
-					
-					mywbo->ttl = get_int_prop(s_ctx->ctx, o, "ttl", &tmp_error);
-					
-					if(tmp_error != NULL){
-						if(tmp_error->code == MY_JS_ERROR_NO_SUCH_VALUE){
-							// simply missing, not too bad
-							g_clear_error(&tmp_error);
-							mywbo->ttl = 0;
-							
-						}else{
-							g_set_error(err,
-								MY_SYNC_ERROR,
-								MY_SYNC_ERROR_FORMAT,
-								"can't parse collection[%i].ttl : %s\n",i, tmp_error->message);
-							g_clear_error(&tmp_error);
-							return NULL;
-						}
-					}
-					
 					g_ptr_array_add(res,mywbo);
 				}
 			}
@@ -275,6 +316,7 @@ gboolean user_exists(SYNC_CTX* s_ctx, const char* username, const char* server_u
 	SoupMessage *msg;
 	gboolean res;
 	const char* method;
+	gchar* canned_response;
 	
 	url = g_string_new(server_url);
 	g_string_append_printf(url, "/user/1.0/%s",username);
@@ -295,8 +337,44 @@ gboolean user_exists(SYNC_CTX* s_ctx, const char* username, const char* server_u
 		res = msg->response_body->data[0] == '1';
 		
 	} else {
-		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
-			"error in user_exists: server replied with %i",msg->status_code);
+		switch(msg->status_code){
+			case SOUP_STATUS_CANT_RESOLVE:
+				canned_response = "Can't resolve host (the server's name may be wrong)";
+				break;
+			case SOUP_STATUS_CANT_RESOLVE_PROXY:
+				canned_response = "Can't resolve proxy (check your proxy configuration)";
+				break;
+			case SOUP_STATUS_CANT_CONNECT:
+				canned_response = "Can't connect to host (check the server's name and if the server is running; check also your network connection)";
+				break;
+			case SOUP_STATUS_CANT_CONNECT_PROXY:
+				canned_response = "Can't connect to proxy (check your proxy configuration; check also your network connection)";
+				break;
+			case SOUP_STATUS_SSL_FAILED:
+				canned_response = "SSL Failed (establishing a secure connection to the server failed; check your server's certificates by accessing the service from midori)";
+				break;
+			case SOUP_STATUS_IO_ERROR:
+				canned_response = "I/O Error (did you just unplug the network ?)";
+				break;
+			case SOUP_STATUS_NOT_FOUND:
+				canned_response = "404 (maybe you didn't include the full name to the service?)";
+				break;
+			case SOUP_STATUS_PROXY_AUTHENTICATION_REQUIRED:
+				canned_response = "Proxy authentication failed (check your proxy configuration)";
+				break;
+			default:
+				canned_response = NULL;
+		}
+		if(canned_response == NULL)
+		{
+			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
+				"error in user_exists: server replied with %i",msg->status_code);
+		}
+		else
+		{
+			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
+				"error in user_exists: %s",canned_response);
+		}
 		res = FALSE;
 	}
 	
@@ -455,17 +533,18 @@ gboolean register_user(SYNC_CTX* s_ctx, const char* server_url, const char* emai
 	return res;
 }
 
-GPtrArray* list_collections(SYNC_CTX* s_ctx, GError** err){
+JSObjectRef list_collections(SYNC_CTX* s_ctx, GError** err){
 	return list_collections_int(s_ctx, s_ctx->enc_user, s_ctx->end_point, err);
 }
 
 
-GPtrArray* list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, GError** err)
+JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, GError** err)
 {
 	GString* url;
 	const char *name;
 	SoupMessage *msg;
-	GPtrArray *res;
+	JSObjectRef res;
+	GError* tmp_error = NULL;
 	
 	url = g_string_new(end_point);
 	g_string_append_printf(url, "1.1/%s/info/collections",username);
@@ -481,19 +560,12 @@ GPtrArray* list_collections_int(SYNC_CTX* s_ctx, const char* username, const cha
 	
 	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
 		
-		GHashTable* res_json = table_from_json(s_ctx->ctx, msg->response_body->data, msg->response_body->length);
+		res = js_from_json(s_ctx->ctx, msg->response_body->data, msg->response_body->length, &tmp_error);
 
-		if(res_json == NULL){
+		if(res == NULL){
 			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
-				"error listing collections: can't parse server response as JSON");
-			res = NULL;
-		}else{
-			const GList* keys = g_hash_table_get_keys(res_json);
-			res = g_ptr_array_new_full(g_hash_table_size(res_json), g_free);
-			for(;keys != NULL;keys = g_list_next(keys)){
-				g_ptr_array_add(res,keys->data);
-			}
-			g_hash_table_unref(res_json);
+				"error listing collections: can't parse server response as JSON (%s)", tmp_error->message);
+			g_clear_error(&tmp_error);
 		}
 	} else if(msg->status_code == SOUP_STATUS_NOT_FOUND){
 		
@@ -573,6 +645,204 @@ gboolean create_collection_int(SYNC_CTX* s_ctx, const char* username, const char
 }
 
 
+gboolean delete_collection(SYNC_CTX* s_ctx, const char* collection, GError** err){
+	return delete_collection_int(s_ctx, s_ctx->enc_user, s_ctx->end_point, collection, err);
+}
+
+gboolean delete_collection_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, GError** err){
+	GString* url;
+	const char *name;
+	SoupMessage *msg;
+	gboolean res;
+	const char* method;          
+	
+	url = g_string_new(end_point);
+	g_string_append_printf(url, "1.1/%s/storage/%s",username,collection);
+	
+	method = SOUP_METHOD_DELETE;
+	
+	msg = soup_message_new (method, url->str);
+	
+	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+	
+	soup_session_send_message (s_ctx->session, msg);
+	
+	name = soup_message_get_uri (msg)->path;
+	
+	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
+		res = TRUE;
+		
+	} else {
+		log_error_if_verbose("in delete_collection",name, msg);
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
+			"error deleting collection %s: server replied with %i",collection, msg->status_code);
+		res = false;
+	}
+	
+	g_string_free(url,TRUE);
+	g_object_unref(msg);
+	
+	return res;	
+}
+
+gboolean add_wbos(SYNC_CTX* s_ctx, const char* collection, WBO* wbos, int cnt, GError** err){
+	return add_wbos_int(s_ctx, s_ctx->enc_user, s_ctx->end_point, collection, wbos, cnt, err);
+}
+
+// todo: check that collection names are valid
+//   	"Collection names may only contain alphanumeric characters, period, underscore and hyphen."
+gboolean add_wbos_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, WBO* wbos, int cnt, GError** err){
+	GString* url;
+	const char *name;
+	SoupMessage *msg;
+	gboolean res;
+	GString* body;
+	const gchar* tmp;
+	const char* method;    
+	int i;
+	
+	url = g_string_new(end_point);
+	g_string_append_printf(url, "1.1/%s/storage/%s",username,collection);
+	
+	method = SOUP_METHOD_POST;
+	
+	msg = soup_message_new (method, url->str);
+	
+	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+	
+	body = g_string_sized_new(cnt*500);
+	g_string_append(body,"[");
+	
+	for(i=0;i<cnt;i++){
+		WBO* wbo = &(wbos[i]);
+		tmp = wbo_to_json(s_ctx, wbo, err);
+		if(tmp == NULL){
+			return FALSE;
+		}
+		g_string_append(body, tmp);
+		if(i < cnt-1){
+			g_string_append(body, ",");
+		}
+		g_free((gpointer)tmp);
+	}
+	g_string_append(body,"]");
+
+	soup_message_set_request(msg, "text/plain", SOUP_MEMORY_TEMPORARY, body->str, body->len);
+	
+	soup_session_send_message (s_ctx->session, msg);
+	
+	g_string_free(body, TRUE);
+	
+	name = soup_message_get_uri (msg)->path;
+	
+	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
+		
+		JSObjectRef oref;
+		GError* tmp_error;
+		tmp_error = NULL;
+		oref = js_from_json(s_ctx->ctx, msg->response_body->data, msg->response_body->length, &tmp_error);
+		if(tmp_error == NULL) {
+			
+			oref = get_object_prop(s_ctx->ctx, oref, "failed", &tmp_error);
+			if(tmp_error != NULL){
+				g_propagate_prefixed_error(err, tmp_error, "Error reading response from server:");
+				res = FALSE;
+			}else{
+				GPtrArray* failed = get_prop_names(s_ctx->ctx, oref);
+				if(failed->len == 0){
+					res = TRUE;
+				}else{
+					res = FALSE;
+					GString* err_msg = g_string_new("Server couldn't save all records: ");
+
+					int i;
+					gpointer key;
+					GPtrArray* value;
+					for(i=0;i<failed->len;i++)
+					{
+						key = g_ptr_array_index(failed, i),
+						value = get_string_array_prop(s_ctx->ctx, oref, key, &tmp_error);
+						g_assert(value != NULL);
+						int i;
+						g_string_append_printf(err_msg, "couldn't save %s: ",(gchar*)key);
+						for(i=0;i<value->len;i++){
+							g_string_append(err_msg, g_ptr_array_index(value, i));
+							if(i < value->len - 1){
+								g_string_append(err_msg,", ");
+							}
+						}
+						g_string_append(err_msg, "\n");
+					}
+					g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED, err_msg->str);
+					
+					g_string_free(err_msg, TRUE);
+				}
+				g_ptr_array_unref(failed);
+			}
+		}else{
+			g_propagate_prefixed_error(err, tmp_error, "Error reading response from server:");
+			res = FALSE;
+		}
+		
+	} else {
+		log_error_if_verbose("in create_collection",name, msg);
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
+			"error creating collection %s: server replied with %i",collection, msg->status_code);
+		res = false;
+	}
+	
+	g_string_free(url,TRUE);
+	g_object_unref(msg);
+	
+	return res;	
+}
+
+WBO* get_record(SYNC_CTX* s_ctx, const char* collection, const char* id, GError** err){
+	return get_record_int(s_ctx, s_ctx->enc_user, s_ctx->end_point, collection, id, err);
+}
+
+WBO* get_record_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, const char* id, GError** err){
+	GString* url;
+	const char *name;
+	SoupMessage *msg;
+	WBO* res;
+	const char* method;
+	GError* tmp_error = NULL;
+	
+	url = g_string_new(end_point);
+	g_string_append_printf(url, "1.1/%s/storage/%s/%s",username,collection,id);
+	
+	method = SOUP_METHOD_GET;
+	
+	msg = soup_message_new (method, url->str);
+	
+	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+	
+	soup_session_send_message (s_ctx->session, msg);
+	
+	name = soup_message_get_uri (msg)->path;
+	
+	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
+		JSObjectRef oref = js_from_json(s_ctx->ctx, msg->response_body->data, msg->response_body->length, &tmp_error);
+		if(tmp_error != NULL) {
+			g_propagate_error(err, tmp_error);
+			return NULL;
+		}
+		res = wbo_from_js(s_ctx, oref, 0, err);
+	} else {
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
+			"error in get_collection (fetching wbo %s/%s): server replied with %i",collection, id, msg->status_code);
+		log_error_if_verbose("in get_record",name, msg);
+		res = NULL;
+	}
+	
+	g_object_unref(msg);
+	g_string_free(url,TRUE);
+	
+	return res;
+}
+
+
 GPtrArray* get_collection(SYNC_CTX* s_ctx, const char* collection, GError** err){
 	return get_collection_int(s_ctx, s_ctx->enc_user, s_ctx->end_point, collection, err);
 }
@@ -603,7 +873,7 @@ GPtrArray* get_collection_int(SYNC_CTX* s_ctx, const char* username, const char*
 	} else {
 		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
 			"error in get_collection (fetching collection %s): server replied with %i",collection, msg->status_code);
-		log_error_if_verbose("in create_collection",name, msg);
+		log_error_if_verbose("in get_collection",name, msg);
 		res = NULL;
 	}
 	
@@ -646,7 +916,11 @@ gboolean set_user(SYNC_CTX* s_ctx,  const char* server_url, const char* user, co
 	tmp = NULL;
 	// verify user exists
 	if(!user_exists(s_ctx, enc_user, server_url, &tmp)){
-		g_propagate_prefixed_error(err, tmp, "can't set user: user %s doesn't exist on server %s",user, server_url);
+		if(tmp != NULL){
+			g_propagate_prefixed_error(err,tmp, "can't set user: ");
+		}else{
+			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_WRONG_USER, "can't set user: user %s doesn't exist on server %s",user, server_url);
+		}
 		return FALSE;
 	}
 	
@@ -722,7 +996,7 @@ unsigned char** regen_key_hmac(const char* username, gsize username_len, const c
 	unsigned char* hmac;
 	unsigned int key_len;
 	gsize info_len;
-	unsigned char** ret;
+	unsigned char** ret = NULL;
 	
 	valid = g_regex_new("[A-K8MN9P-Z2-7](-([A-K8MN9P-Z2-7]{5})){5}", G_REGEX_CASELESS, 0, NULL);
 	
@@ -733,11 +1007,11 @@ unsigned char** regen_key_hmac(const char* username, gsize username_len, const c
 			strncpy(k+1+i*5,user_key+2+i*6,5);
 		}
 		k[26] = '\0';
-		printf("got key %s from %s\n",k,user_key);
+		//printf("got key %s from %s\n",k,user_key);
 		dst = (guchar*)g_strnfill(16,'\0');
 		from_user_friendly_base32(k,26);
-		printf("friendly k is:%s\n", k);
-		g_assert(16 == base32_decode((char*)dst, 16, k, 26));
+		//printf("friendly k is:%s\n", k);
+		g_assert(16 == base32_decode((guint8*)dst, 16, k, 26));
 		
 		// construit encryption et HMAC
 		// "Sync-AES_256_CBC-HMAC256" + username + 1
@@ -804,6 +1078,41 @@ unsigned char** regen_key_hmac(const char* username, gsize username_len, const c
 	return ret;
 }
 
+guchar* randomBytes(gsize count, GError** err){
+	guchar* buf = g_malloc(count);
+	int success = RAND_bytes(buf, count);
+	if(success == -1){
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED,
+			"Generating random bytes seems to be unsupported (errcode=%lu)", ERR_get_error());
+		g_free(buf);
+		return NULL;
+	}else if(success == 0){
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED,
+			"Not enough entropy to generate %lu random bytes (errcode=%lu)", count, ERR_get_error());
+		g_free(buf);
+		return NULL;
+	}else{
+		return buf;
+	}
+}
+
+unsigned char** generate_bulk_key(GError** err){
+	guchar** ret = g_malloc(sizeof(gpointer) * 2);
+	ret[0] = randomBytes(32,err);
+	if(ret[0] == NULL){
+		g_free(ret);
+		return NULL;
+	}
+	ret[1] = randomBytes(32,err);
+	if(ret[1] == NULL){
+		g_free(ret[0]);
+		g_free(ret);
+		return NULL;
+	}
+	
+	return ret;
+}
+
 WBO* get_wbo_by_id(GPtrArray* coll, const char* id){
 	int i;
 	WBO* w;
@@ -822,7 +1131,7 @@ char* decrypt_wbo(SYNC_CTX* s_ctx, const char* collection, WBO* w, GError** err)
 }
 
 
-char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac_key, WBO* w, GError** err){
+char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac_key, const WBO* w, GError** err){
 	HMAC_CTX hctx;
 	const char* ciphertext64;
 	const char* iv64;
@@ -939,18 +1248,31 @@ char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac_key
 		// decrypt
 		
 		
-		EVP_CIPHER_CTX hctx;
+		EVP_CIPHER_CTX hctx = {0};
 		EVP_CIPHER_CTX_init(&hctx);
 		
 		// AES_256_CBC --> CKM_AES_CBC --> CKM_AES_CBC_PAD
 		
 		g_assert(1 == EVP_DecryptInit_ex(&hctx, EVP_aes_256_cbc(), NULL, key, iv));
 		
-		guchar* kout = malloc((ciphertext_len+EVP_CIPHER_CTX_block_size(&hctx))*sizeof(unsigned char));
-		int kout_len;
-		int kout_rem;
-		
+		guchar* kout = g_malloc0((ciphertext_len+EVP_CIPHER_CTX_block_size(&hctx))*sizeof(unsigned char));
+		int kout_len = 0;
+		int kout_rem = 0;
+
+
 		g_assert(1 == EVP_DecryptUpdate(&hctx, kout, &kout_len, ciphertext, ciphertext_len));
+
+		// const gchar *p;
+		
+		// g_assert (kout_len >= 0);
+
+		// int i;
+		// for (i=0, p = (char*)kout; ((p - (char*)kout) < kout_len) && *p; i++, p++)
+		// {
+		// 	printf("%i\n",i);
+		// }
+		// exit(-1);
+			
 		// printf("out deco=%i\n", kout_len);
 		g_assert(1 == EVP_DecryptFinal_ex(&hctx, kout+kout_len, &kout_rem));
 		// printf("out final deco=%i %s\n", kout_len+kout_rem, kout);
@@ -959,6 +1281,10 @@ char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac_key
 		kout_len += kout_rem;
 		
 		kout[kout_len] = '\0';
+
+		// if(kout[0] == '\0'){
+		// 	printf("valgrind complains!");
+		// }
 		
 		if(g_utf8_validate((char*) kout, kout_len, NULL)){
 			res = g_strndup((char*)kout, kout_len);
@@ -973,10 +1299,94 @@ char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac_key
 		g_free(iv);
 		g_free((gpointer)hmachex);
 		g_free(hmac);
-		free(kout);
+		g_free(kout);
 		
 		return res;
 	}
+}
+
+const char* encrypt_wbo(SYNC_CTX* s_ctx, const char* collection, const WBO* w, GError** err){
+	//todo: non default keys
+	return encrypt_wbo_int(s_ctx, s_ctx->bulk_key, s_ctx->bulk_hmac, w, err);
+}
+
+const char* encrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac_key, const WBO* w, GError** err){
+	HMAC_CTX hctx;
+	const char* ciphertext64;
+	const guchar* iv;
+	char* iv64;
+	const char* hmachex;
+	GError* tmp_error = NULL;
+	const char* res;
+	guchar* comp_hmac;
+	unsigned int comp_hmac_len;
+	
+	g_assert(w->payload != NULL);
+	gsize payload_len = strlen(w->payload);
+	
+	// encrypt
+	iv = randomBytes(16, &tmp_error);
+	if(iv == NULL){
+		g_propagate_prefixed_error(err, tmp_error, "Can't encrypt: ");
+		return NULL;
+	}
+	
+	EVP_CIPHER_CTX cctx;
+	EVP_CIPHER_CTX_init(&cctx);
+	
+	// AES_256_CBC --> CKM_AES_CBC --> CKM_AES_CBC_PAD
+	
+	g_assert(1 == EVP_EncryptInit_ex(&cctx, EVP_aes_256_cbc(), NULL, key, iv));
+	
+	guchar* ciphertext = malloc((payload_len+EVP_CIPHER_CTX_block_size(&cctx))*sizeof(unsigned char)); // TODO: what's the encrypted size ?
+	int ciphertext_len;
+	int ciphertext_rem;
+	
+	g_assert(1 == EVP_EncryptUpdate(&cctx, ciphertext, &ciphertext_len, (guchar*)w->payload, payload_len));
+	//printf("out enco=%i from %lu\n", ciphertext_len, payload_len);
+	g_assert(1 == EVP_EncryptFinal_ex(&cctx, ciphertext+ciphertext_len, &ciphertext_rem));
+	//printf("out final enco=%i\n", ciphertext_len+ciphertext_rem);
+	EVP_CIPHER_CTX_cleanup(&cctx);
+	
+	ciphertext_len += ciphertext_rem;
+	
+	ciphertext64 = g_base64_encode(ciphertext, ciphertext_len);
+	//printf("encoded %lu bytes of cipher from %i (%s)\n", strlen(ciphertext64), ciphertext_len, ciphertext64);
+	
+	iv64 = g_base64_encode(iv, 16);
+	//printf("encoded %lu bytes of IV from %lu (%s)\n", 16L, strlen(iv64), iv64);
+	
+	
+	// hmac
+	HMAC_CTX_init(&hctx);
+	
+	g_assert(1 == HMAC_Init_ex(&hctx, hmac_key, 32, EVP_sha256(), NULL));
+	
+	g_assert(1 == HMAC_Update(&hctx, (guchar*)ciphertext64, strlen(ciphertext64)));
+	
+	comp_hmac = g_malloc(32);
+	
+	g_assert(1 == HMAC_Final(&hctx, comp_hmac, &comp_hmac_len));
+	g_assert(32 == comp_hmac_len);
+	
+	HMAC_CTX_cleanup(&hctx);
+	
+	hmachex = hex_encode(comp_hmac, comp_hmac_len);
+
+	//printf("got comp. hmac=%s\n", hmachex);
+	
+	
+	JSObjectRef payload = js_create_empty_object(s_ctx->ctx);
+	
+	
+	set_string_prop(s_ctx->ctx, payload, "ciphertext", ciphertext64, &tmp_error);
+	set_string_prop(s_ctx->ctx, payload, "IV", iv64, &tmp_error);
+	set_string_prop(s_ctx->ctx, payload, "hmac", hmachex, &tmp_error);
+	
+
+	res = js_to_json(s_ctx->ctx, payload);
+	
+	return res;
 }
 
 
@@ -1001,30 +1411,44 @@ void free_sync(SYNC_CTX* s_ctx){
 		JSGlobalContextRelease(s_ctx->ctx);
 	}
 	if(s_ctx->session != NULL){
+		soup_session_abort (s_ctx->session);
 		g_object_unref(s_ctx->session);
 		s_ctx->session = NULL;
 	}
-	g_free((gpointer)s_ctx->end_point);
-	s_ctx->end_point = NULL;
-	g_free((gpointer)s_ctx->enc_user);
-	s_ctx->enc_user = NULL;
-	g_free((gpointer)s_ctx->master_key);
-	s_ctx->master_key = NULL;
-	g_free((gpointer)s_ctx->master_hmac);
-	s_ctx->master_hmac = NULL;
-	g_free((gpointer)s_ctx->bulk_key);
-	s_ctx->bulk_key = NULL;
-	g_free((gpointer)s_ctx->bulk_hmac);
-	s_ctx->bulk_hmac = NULL;
-	g_free(s_ctx->user_pass);
-	s_ctx->user_pass = NULL;	
+	if(s_ctx->end_point != NULL){
+		g_free((gpointer)s_ctx->end_point);
+		s_ctx->end_point = NULL;
+	}
+	if(s_ctx->enc_user != NULL){
+		g_free((gpointer)s_ctx->enc_user);
+		s_ctx->enc_user = NULL;
+	}
+	if(s_ctx->master_key != NULL){
+		g_free((gpointer)s_ctx->master_key);
+		s_ctx->master_key = NULL;
+	}
+	if(s_ctx->master_hmac != NULL){
+		g_free((gpointer)s_ctx->master_hmac);
+		s_ctx->master_hmac = NULL;
+	}
+	if(s_ctx->bulk_key != NULL){
+		g_free((gpointer)s_ctx->bulk_key);
+		s_ctx->bulk_key = NULL;
+	}
+	if(s_ctx->bulk_hmac != NULL){
+		g_free((gpointer)s_ctx->bulk_hmac);
+		s_ctx->bulk_hmac = NULL;
+	}
+	if(s_ctx->user_pass != NULL){
+		g_free((gpointer)s_ctx->user_pass);
+		s_ctx->user_pass = NULL;
+	}
 }
 
 
 gboolean refresh_bulk_keys(SYNC_CTX* ctx, GError** err) {
 	GPtrArray* crypto;
 	WBO* keys;
-	char* deckeys;
 	GError* tmp_error = NULL;
 	
 	g_assert(ctx->master_key != NULL);
@@ -1045,69 +1469,97 @@ gboolean refresh_bulk_keys(SYNC_CTX* ctx, GError** err) {
 		g_ptr_array_unref(crypto);
 		return FALSE;
 	}
-	deckeys = decrypt_wbo_int(ctx, ctx->master_key, ctx->master_hmac, keys, &tmp_error);
+	gboolean ret = refresh_bulk_keys_from_wbo(ctx, keys, err);
 	g_ptr_array_unref(crypto);
+	return ret;
+}
+	
+gboolean refresh_bulk_keys_from_wbo(SYNC_CTX* ctx, WBO* cryptokeys, GError** err) {
+	guchar** deckeys;
+	deckeys = decrypt_bulk_keys(ctx, ctx->master_key, ctx->master_hmac, cryptokeys, err);
+	if(deckeys == NULL){
+		ctx->bulk_key = NULL;
+		ctx->bulk_hmac = NULL;
+		return FALSE;
+	}
+	ctx->bulk_key = deckeys[0];
+	ctx->bulk_hmac = deckeys[1];
+	g_free(deckeys);
+	
+	return TRUE;
+}
+
+guchar** decrypt_bulk_keys(SYNC_CTX* ctx, const guchar* master_key, const guchar* master_hmac, WBO* keys, GError** err) {
+	GError* tmp_error = NULL;
+	
+	// decrypt payload
+	gchar* deckeys = decrypt_wbo_int(ctx, ctx->master_key, ctx->master_hmac, keys, &tmp_error);
 	
 	if(deckeys == NULL){
 		if(tmp_error != NULL){
 			g_propagate_prefixed_error(err,tmp_error,
-				"can't decrypt bulk keys: wrong master key or corrupt server records");
+				"can't decrypt bulk keys: wrong master key or corrupt server records: ");
 		}else{
 			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED,
 				"can't decrypt bulk keys: wrong master key or corrupt server records");
 		}
-		return FALSE;
-	}else{
-		JSObjectRef bulkKeysObj = js_from_json(ctx->ctx, deckeys, strlen(deckeys), &tmp_error);
-		g_free(deckeys);
-		if(bulkKeysObj == NULL){
-			if(tmp_error != NULL){
-				g_propagate_prefixed_error(err,tmp_error,
-					"bulk keys content is not JSON (content:%s):", deckeys);
-			}else{
-				g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
-					"bulk keys content is not JSON (content:%s)", deckeys);
-			}
-			return FALSE;
-		}
-		
-		GPtrArray* bulk_key_hmac64 = get_string_array_prop(ctx->ctx, bulkKeysObj, "default", &tmp_error);
-		if(bulk_key_hmac64 == NULL){
-			if(tmp_error != NULL){
-				g_propagate_prefixed_error(err,tmp_error,
-					"can't decrypt bulk keys: wrong master key or corrupt server records");
-			}else{
-				g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
-					"expected a key,hmac pair dictionary in a defaults property, but it's not there");
-			}
-			return FALSE;
-		} else if(bulk_key_hmac64->len != 2){
+		return NULL;
+	}
+	
+	// read content
+	JSObjectRef bulkKeysObj = js_from_json(ctx->ctx, deckeys, strlen(deckeys), &tmp_error);
+	g_free(deckeys);
+	if(bulkKeysObj == NULL){
+		if(tmp_error != NULL){
+			g_propagate_prefixed_error(err,tmp_error,
+				"bulk keys content is not JSON (content:%s):", deckeys);
+		}else{
 			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
-				"expected a key,hmac pair dictionary in a defaults property, but it's not of size 2 but %i", bulk_key_hmac64->len);
+				"bulk keys content is not JSON (content:%s)", deckeys);
+		}
+		return NULL;
+	}
+	
+	GPtrArray* bulk_key_hmac64 = get_string_array_prop(ctx->ctx, bulkKeysObj, "default", &tmp_error);
+	if(bulk_key_hmac64 == NULL){
+		if(tmp_error != NULL){
+			g_propagate_prefixed_error(err,tmp_error,
+				"can't decrypt bulk keys: wrong master key or corrupt server records");
+		}else{
+			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
+				"expected a key,hmac pair dictionary in a defaults property, but it's not there");
+		}
+		return NULL;
+	} else if(bulk_key_hmac64->len != 2){
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
+			"expected a key,hmac pair dictionary in a defaults property, but it's not of size 2 but %i", bulk_key_hmac64->len);
+		g_ptr_array_unref(bulk_key_hmac64);
+		return NULL;
+	} else {
+		guchar** ret = g_malloc(sizeof(gpointer)*2);
+		gsize k_len;
+		ret[0] = (guchar*) g_base64_decode(g_ptr_array_index(bulk_key_hmac64,0), &k_len);
+		if(k_len != 32){
+			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
+				"invalid bulk key size (expecting 32): %lu",k_len);
+			g_free(ret[0]);
+			g_free(ret);
 			g_ptr_array_unref(bulk_key_hmac64);
-			return FALSE;
+			return NULL;
 		} else {
-			gsize k_len;
-			ctx->bulk_key = (guchar*) g_base64_decode(g_ptr_array_index(bulk_key_hmac64,0), &k_len);
+			ret[1] = g_base64_decode(g_ptr_array_index(bulk_key_hmac64,1), &k_len);
 			if(k_len != 32){
 				g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
-					"invalid bulk key size (expecting 32): %lu",k_len);
-				ctx->bulk_key = NULL;
+					"invalid hmac size (expecting 32): %lu",k_len);
+				g_free((gpointer)ctx->bulk_hmac);
+				g_free(ret[0]);
+				g_free(ret[1]);
+				g_free(ret);
 				g_ptr_array_unref(bulk_key_hmac64);
-				return FALSE;
+				return NULL;
 			} else {
-				ctx->bulk_hmac = g_base64_decode(g_ptr_array_index(bulk_key_hmac64,1), &k_len);
-				if(k_len != 32){
-					g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
-						"invalid hmac size (expecting 32): %lu",k_len);
-					g_free((gpointer)ctx->bulk_hmac);
-					ctx->bulk_hmac = NULL;
-					g_ptr_array_unref(bulk_key_hmac64);
-					return FALSE;
-				} else {
-					g_ptr_array_unref(bulk_key_hmac64);
-					return TRUE;
-				}
+				g_ptr_array_unref(bulk_key_hmac64);
+				return ret;
 			}
 		}
 	}
@@ -1141,6 +1593,9 @@ gboolean set_master_key(SYNC_CTX* s_ctx, const char* master_key, GError** err){
 		}
 	}
 }
+#define SUP_CNT 3
+static const char* sup[SUP_CNT] = { "clients", "bookmarks", "history" };
+static const int sup_v[SUP_CNT] = { 1, 2, 1 };
 
 
 gboolean verify_storage(SYNC_CTX* s_ctx, GError** err){
@@ -1206,7 +1661,7 @@ gboolean verify_storage(SYNC_CTX* s_ctx, GError** err){
 	if(global == NULL){
 		if(tmp_error != NULL){
 			g_propagate_prefixed_error(err,tmp_error,
-				"error in verify_storage: meta/global payload can't be interpreted as JSON");
+				"error in verify_storage: meta/global payload can't be interpreted as JSON: ");
 		}else{
 			g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FORMAT,
 				"error in verify_storage:  meta/global payload can't be interpreted as JSON");
@@ -1243,10 +1698,7 @@ gboolean verify_storage(SYNC_CTX* s_ctx, GError** err){
 	}
 	
 	int i;
-	const char* sup[3] = { "clients", "bookmarks", "history" };
-	const int sup_v[3] = { 1, 2, 1 };
-	
-	for(i = 0 ; i < 3 ; i++){
+	for(i = 0 ; i < SUP_CNT ; i++){
 		engine = get_object_prop(s_ctx->ctx, engines, sup[i], &tmp_error);
 		
 		if(engine == NULL){
@@ -1277,6 +1729,198 @@ gboolean verify_storage(SYNC_CTX* s_ctx, GError** err){
 	
 	return TRUE;
 }
+
+void create_key_bundle(SYNC_CTX* s_ctx, GError** err){
+}
+
+gboolean create_storage(SYNC_CTX* s_ctx, const char* master_key, GError** err){
+	if(!create_metaglobal(s_ctx, err)){
+		return FALSE;
+	}
+	return create_cryptokeys(s_ctx, master_key, err);
+}
+
+
+gboolean create_metaglobal(SYNC_CTX* s_ctx, GError** err){
+	GString* url;
+	const char *name;
+	SoupMessage *msg;
+	gboolean res;
+	const char* method;
+	GString* body;
+	JSObjectRef global_payload;
+	WBO* wbo = g_malloc(sizeof(WBO));
+	wbo->id = g_strdup("global");
+	
+	global_payload = js_create_empty_object(s_ctx->ctx);
+	g_assert(set_string_prop(s_ctx->ctx, global_payload, "syncId", "IPUB7g3zdp7O", err)); // FIXME: generate 12 random base64 characters
+	g_assert(set_int_prop(s_ctx->ctx, global_payload, "storageVersion", SYNC_SUPPORTED_VERSION, err));
+	
+	JSObjectRef engines = js_create_empty_object(s_ctx->ctx);
+	
+	int i;
+	for(i=0;i<SUP_CNT;i++){
+		JSObjectRef engine = js_create_empty_object(s_ctx->ctx);
+		g_assert (set_int_prop(s_ctx->ctx, engine, "version", sup_v[i], err));
+		g_assert (set_string_prop(s_ctx->ctx, engine, "synId", "IPUB7g3zd22O", err)); // FIXME: generate 12 random base64 characters
+		g_assert (set_object_prop(s_ctx->ctx, engines, sup[i], engine, err));
+	}
+	g_assert (set_object_prop(s_ctx->ctx, global_payload, "engines", engines, err));
+	
+	wbo->payload = js_to_json(s_ctx->ctx, global_payload);
+	
+	url = g_string_new(s_ctx->end_point);
+	g_string_append_printf(url, "1.1/%s/storage/meta/global",s_ctx->enc_user);
+	
+	method = SOUP_METHOD_PUT;
+	
+	msg = soup_message_new (method, url->str);
+	
+	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+	
+	const char* jsn = wbo_to_json(s_ctx, wbo, err);
+	g_assert(jsn != NULL);
+	body = g_string_new(jsn);
+
+	soup_message_set_request(msg, "text/plain", SOUP_MEMORY_TEMPORARY, body->str, body->len);
+	
+	soup_session_send_message (s_ctx->session, msg);
+	
+	g_string_free(body, TRUE);
+	
+	name = soup_message_get_uri (msg)->path;
+	
+	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
+		res = TRUE;
+	} else {
+		log_error_if_verbose("in create_storage",name, msg);
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
+			"error in create_storage (creating meta/global): server replied with %i",msg->status_code);
+		res = FALSE;
+	}
+	
+	g_object_unref(msg);
+	g_string_free(url,TRUE);
+	
+	
+	return res;
+}
+
+gboolean create_cryptokeys(SYNC_CTX* s_ctx, const char* master_key, GError** err){
+	GError* tmp_error = NULL;
+	GString* url;
+	const char *name;
+	SoupMessage *msg;
+	gboolean res;
+	const char* method;
+	GString* body;
+	JSObjectRef keys_payload;
+	WBO* wbo = g_malloc(sizeof(WBO));
+	wbo->id = g_strdup("keys");
+	
+	guchar** key_hmac;
+	
+	key_hmac = regen_key_hmac(s_ctx->enc_user, strlen(s_ctx->enc_user), master_key, err);
+	
+	if(key_hmac == NULL){
+		s_ctx->master_key = NULL;
+		s_ctx->master_hmac = NULL;
+		return FALSE;
+		
+	}else{
+		s_ctx->master_key = key_hmac[0];
+		s_ctx->master_hmac = key_hmac[1];
+		
+		g_free(key_hmac);
+	}
+
+	keys_payload = js_create_empty_object(s_ctx->ctx);
+
+	guchar** bulk_key_hmac;
+
+	bulk_key_hmac = generate_bulk_key(err);
+	if(bulk_key_hmac == NULL){
+		s_ctx->bulk_key = NULL;
+		s_ctx->bulk_hmac = NULL;
+		return FALSE;
+		
+	}else{
+		s_ctx->bulk_key = bulk_key_hmac[0];
+		s_ctx->bulk_hmac = bulk_key_hmac[1];
+		
+		g_free(bulk_key_hmac);
+	}
+	
+	GPtrArray* bulk = g_ptr_array_new_full(2, ((GDestroyNotify)(g_free)));
+	const gchar* encoded = g_base64_encode(s_ctx->bulk_key, 32);
+	g_ptr_array_add(bulk,(gpointer)encoded);
+	encoded = g_base64_encode(s_ctx->bulk_hmac, 32);
+	g_ptr_array_add(bulk,(gpointer)encoded);
+	
+	set_string_array_prop(s_ctx->ctx, keys_payload, "default", bulk, &tmp_error);
+	if(tmp_error != NULL){
+		g_propagate_error(err, tmp_error);
+		return FALSE;
+	}
+	
+	g_ptr_array_unref(bulk);
+	
+	JSObjectRef empty = js_create_empty_object(s_ctx->ctx);
+	
+	set_object_prop(s_ctx->ctx, keys_payload, "collections", empty, err);
+	
+	set_string_prop(s_ctx->ctx, keys_payload, "collection", "crypto", err);
+
+	wbo->payload = js_to_json(s_ctx->ctx, keys_payload);
+	
+	encoded = encrypt_wbo_int(s_ctx, s_ctx->master_key, s_ctx->master_hmac, wbo, &tmp_error);
+	if(encoded == NULL){
+		g_propagate_error(err, tmp_error);
+		return FALSE;
+	}else{
+		wbo->payload = encoded;
+	}
+	
+	url = g_string_new(s_ctx->end_point);
+	g_string_append_printf(url, "1.1/%s/storage/crypto/keys",s_ctx->enc_user);
+	
+	method = SOUP_METHOD_PUT;
+	
+	msg = soup_message_new (method, url->str);
+	
+	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+	
+	const char* json = wbo_to_json(s_ctx, wbo, err);
+	g_assert(json != NULL);
+	body = g_string_new(json);
+
+	wbo_free(wbo);
+	
+	
+	soup_message_set_request(msg, "text/plain", SOUP_MEMORY_TEMPORARY, body->str, body->len);
+	
+	soup_session_send_message (s_ctx->session, msg);
+	
+	g_string_free(body, TRUE);
+	
+	name = soup_message_get_uri (msg)->path;
+	
+	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
+		res = TRUE;
+	} else {
+		log_error_if_verbose("in create_storage",name, msg);
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
+			"error in create_storage (creating meta/global): server replied with %i",msg->status_code);
+		res = FALSE;
+	}
+	
+	g_object_unref(msg);
+	g_string_free(url,TRUE);
+	
+	
+	return res;
+}
+
 
 SyncItem* get_bookmark_rec(SYNC_CTX* s_ctx, GPtrArray* bookmarks_wbo, WBO* itm, JSObjectRef wbo_json, GError** err){
 	
@@ -1514,7 +2158,7 @@ SyncItem* get_bookmark_rec(SYNC_CTX* s_ctx, GPtrArray* bookmarks_wbo, WBO* itm, 
 }
 
 #define ROOTS_LEN	3
-static const char* roots[ROOTS_LEN] = {"menu","toolbar", "unfiled"};
+static const char* roots[ROOTS_LEN] = {"menu","toolbar","unfiled"};
 
 GPtrArray* get_bookmarks(SYNC_CTX* s_ctx, GError** err){
 	GError* tmp_error = NULL;

@@ -53,6 +53,7 @@ enum
 {
     ADD_FEED,
     REMOVE_FEED,
+    PREFERENCES,
 
     LAST_SIGNAL
 };
@@ -572,6 +573,11 @@ my_sync_panel_get_stock_id (MidoriViewable* viewable)
     return STOCK_MY_SYNC_PANEL;
 }
 
+static void my_sync_panel_preferences_clicked_cb (GtkWidget* toolitem, MySyncPanel* self)
+{
+	g_signal_emit_by_name(self,"preferences");
+}
+
 static GtkWidget*
 my_sync_panel_get_toolbar (MidoriViewable* viewable)
 {
@@ -580,11 +586,24 @@ my_sync_panel_get_toolbar (MidoriViewable* viewable)
     if (!panel->toolbar)
     {
         GtkWidget* toolbar;
-
+        GtkToolItem* toolitem;
+        
         toolbar = gtk_toolbar_new ();
-        gtk_toolbar_set_style (GTK_TOOLBAR (toolbar), GTK_TOOLBAR_BOTH_HORIZ);
         gtk_toolbar_set_icon_size (GTK_TOOLBAR (toolbar), GTK_ICON_SIZE_BUTTON);
+        gtk_toolbar_set_show_arrow (GTK_TOOLBAR (toolbar), FALSE);
         panel->toolbar = toolbar;
+        
+        toolitem = gtk_tool_button_new_from_stock (GTK_STOCK_PREFERENCES);
+        gtk_widget_set_name (GTK_WIDGET (toolitem), "Preferences");
+        gtk_widget_set_tooltip_text (GTK_WIDGET (toolitem),
+                                     _("Preferences"));
+        //gtk_tool_item_set_is_important (toolitem, TRUE);
+        g_signal_connect (toolitem, "clicked",
+            G_CALLBACK (my_sync_panel_preferences_clicked_cb), panel);
+        gtk_toolbar_insert (GTK_TOOLBAR (toolbar), toolitem, -1);
+        gtk_widget_show (GTK_WIDGET (toolitem));
+
+
     }
 
     return panel->toolbar;
@@ -631,6 +650,16 @@ my_sync_panel_class_init (MySyncPanelClass* class)
         g_cclosure_marshal_VOID__POINTER,
         G_TYPE_NONE, 1,
         G_TYPE_POINTER);
+
+    signals[PREFERENCES] = g_signal_new (
+        "preferences",
+        G_TYPE_FROM_CLASS (class),
+        (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
+        0,
+        0,
+        NULL,
+        g_cclosure_marshal_VOID__POINTER,
+        G_TYPE_NONE, 0);
 
     gobject_class = G_OBJECT_CLASS (class);
     gobject_class->finalize = my_sync_panel_finalize;

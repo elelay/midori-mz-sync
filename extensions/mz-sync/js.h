@@ -41,14 +41,33 @@ JSObjectRef get_object_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* n
 
 
 GPtrArray* get_string_array_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, GError** err);
-
+GPtrArray* get_array_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, GError** err);
+gboolean has_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name);
 
 JSObjectRef js_from_json(JSGlobalContextRef ctx, const char* body, gsize len, GError** err);
+GPtrArray* get_prop_names(JSGlobalContextRef ctx, JSObjectRef o);
 
 
-/* unused */
-const char* to_json(JSGlobalContextRef ctx, GHashTable* dict);
-GHashTable* table_from_js(JSGlobalContextRef ctx, JSObjectRef oref);
-GHashTable* table_from_json(JSGlobalContextRef ctx, const char* body, gsize len);
+/* from/to JSON */
+const char* js_to_json(JSGlobalContextRef ctx, JSObjectRef dict);
+//const char* to_json(JSGlobalContextRef ctx, GHashTable* dict);
+// GHashTable* table_from_js(JSGlobalContextRef ctx, JSObjectRef oref);
+// GHashTable* table_from_json(JSGlobalContextRef ctx, const char* body, gsize len);
+
+JSObjectRef js_create_empty_object(JSGlobalContextRef ctx);
+void add_property(JSGlobalContextRef ctx, JSObjectRef emptyObject, const gchar* key, GVariant* value);
+
+gboolean set_string_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, const char* value, GError** err);
+
+gboolean set_int_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, int value, GError** err);
+
+gboolean set_double_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, double value, GError** err);
+
+gboolean set_boolean_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, gboolean value, GError** err);
+
+gboolean set_object_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, JSObjectRef value, GError** err);
+
+
+gboolean set_string_array_prop(JSGlobalContextRef ctx, JSObjectRef o, const char* name, GPtrArray* value, GError** err);
 
 #endif

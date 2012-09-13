@@ -70,10 +70,10 @@ char* hex_encode(const guchar* s, gsize len){
 	int i;
 	
 	for(i=0;i<len;i++){
-		printf("%02x", s[i]);
+		//printf("%02x", s[i]);
 		sprintf(dest+i*2, "%02x", s[i]);
 	}
-	printf("\n");
+	//printf("\n");
 	dest[len * 2] = '\0';
 	return dest;
 }
@@ -116,7 +116,6 @@ guchar* hex_decode(const char* s, gsize* len){
 	}
 	return dest;
 }
-
 static const char base32_alphabet[33] = {
 	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
 	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
