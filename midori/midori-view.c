@@ -3312,7 +3312,13 @@ webkit_web_view_console_message_cb (GtkWidget*   web_view,
     {
         MidoriBrowser* browser = midori_browser_get_for_widget (GTK_WIDGET (view));
         MidoriSpeedDial* dial = katze_object_get_object (browser, "speed-dial");
-        midori_speed_dial_save_message (dial, message, NULL);
+        GError* error = NULL;
+        midori_speed_dial_save_message (dial, message, &error);
+        if (error != NULL)
+        {
+            g_critical ("Failed speed dial message: %s\n", error->message);
+            g_error_free (error);
+        }
     }
     else
         g_signal_emit (view, signals[CONSOLE_MESSAGE], 0, message, line, source_id);
@@ -4230,7 +4236,7 @@ midori_view_set_uri (MidoriView*  view,
         g_warning ("Calling %s() before adding the view to a browser. This "
                    "breaks extensions that monitor page loading.", G_STRFUNC);
 
-    if (g_getenv ("MIDORI_UNARMED") == NULL)
+    if (!midori_debug ("unarmed"))
     {
         if (!uri || !strcmp (uri, "") || !strcmp (uri, "about:blank"))
         {
@@ -4249,9 +4255,7 @@ midori_view_set_uri (MidoriView*  view,
             katze_item_set_meta_string (view->item, "mime-type", NULL);
             katze_item_set_meta_integer (view->item, "delay", -1);
 
-            html = midori_speed_dial_get_html (dial,
-                katze_object_get_boolean (view->settings, "close-buttons-left"),
-                G_OBJECT (view), NULL);
+            html = midori_speed_dial_get_html (dial, NULL);
             midori_view_load_alternate_string (view, html, "about:blank", NULL);
 
             #ifdef G_ENABLE_DEBUG
@@ -4371,11 +4375,11 @@ midori_view_set_uri (MidoriView*  view,
                 gchar* res_dir = midori_paths_get_res_filename ("");
                 gchar* lib_dir = midori_paths_get_lib_path (PACKAGE_NAME);
                 data = g_strdup_printf ("<body><h1>%s</h1>"
-                    "<p>config: %s</p>"
-                    "<p>res: %s</p>"
-                    "<p>lib: %s</p>"
-                    "<p>cache: %s</p>"
-                    "<p>tmp: %s</p>"
+                    "<p>config: <code>%s</code></p>"
+                    "<p>res: <code>%s</code></p>"
+                    "<p>lib: <code>%s</code></p>"
+                    "<p>cache: <code>%s</code></p>"
+                    "<p>tmp: <code>%s</code></p>"
                     "</body>",
                     uri, midori_paths_get_config_dir (), res_dir,
                     lib_dir, midori_paths_get_cache_dir (), midori_paths_get_tmp_dir ());
@@ -4403,7 +4407,7 @@ midori_view_set_uri (MidoriView*  view,
                     "<tr><td>libnotify</td><td>%s</td></tr>",
                     "<tr><td>single instance</td><td>%s</td></tr>",
                     "<tr><td>Platform</td><td>%s ", "%s ", "%s</td></tr>",
-                    "<tr><td>Identification</td><td>%s</td></tr>",
+                    "<tr><td>Identification</td><td><code>%s</code></td></tr>",
                     "<tr><td>Video&nbsp;Formats</td><td>%s</td></tr>",
                 };
                 gchar const* version_strings[] = {
@@ -4438,7 +4442,7 @@ midori_view_set_uri (MidoriView*  view,
                     "<img src=\"res://logo-shade.png\" "
                     "style=\"position: absolute; right: 15px; bottom: 15px; z-index: -9;\">"
                     "<table>"
-                    "<tr><td>Command&nbsp;line</td><td>%s</td></tr>"
+                    "<tr><td>Command&nbsp;line</td><td><code>%s</code></td></tr>"
                     "<tr><td>Midori</td><td>%s (%s)</td></tr>"
                     "<tr><td>GTK+</td><td>%d.%d.%d (%d.%d.%d)"
                     " &nbsp; Glib %d.%d.%d (%d.%d.%d)</td></tr>"

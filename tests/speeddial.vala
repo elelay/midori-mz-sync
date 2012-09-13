@@ -42,12 +42,53 @@ static void speeddial_load () {
     Katze.assert_str_equal (json, dial_data.keyfile.to_data (), dial_json.keyfile.to_data ());
     Katze.assert_str_equal (json, dial_data.get_next_free_slot (), "Dial 2");
     Katze.assert_str_equal (json, dial_json.get_next_free_slot (), "Dial 2");
+
+    try {
+        dial_data.save_message ("SpeedDial");
+        assert_not_reached ();
+    }
+    catch (Error error) { /* Error expected: pass */ }
+    try {
+        dial_data.save_message ("speed_dial-save-rename ");
+        assert_not_reached ();
+    }
+    catch (Error error) { /* Error expected: pass */ }
+    try {
+        dial_data.save_message ("speed_dial-save-foo 1");
+        assert_not_reached ();
+    }
+    catch (Error error) { /* Error expected: pass */ }
+
+    dial_data.save_message ("speed_dial-save-rename 1 Lorem");
+    Katze.assert_str_equal (data, dial_data.keyfile.get_string ("Dial 1", "title"), "Lorem");
+    dial_data.save_message ("speed_dial-save-delete 1");
+    Katze.assert_str_equal (data, dial_data.get_next_free_slot (), "Dial 1");
+
+    data = get_test_file ("""
+            [settings]
+            columns=3
+            rows=3
+
+            [Dial 2]
+            uri=http://green.cat
+            title=Green cat is green
+
+            [Dial 4]
+            uri=http://heise.de
+            title=IT-News
+        """);
+    dial_data = new Midori.SpeedDial (data, "");
+    FileUtils.remove (data);
+    Katze.assert_str_equal (data, dial_data.get_next_free_slot (), "Dial 1");
+    dial_data.save_message ("speed_dial-save-swap 2 4");
+    Katze.assert_str_equal (data, dial_data.keyfile.get_string ("Dial 2", "title"), "IT-News");
 }
 
 void main (string[] args) {
     string temporary_cache = DirUtils.make_tmp ("cacheXXXXXX");
     Environment.set_variable ("XDG_CACHE_HOME", temporary_cache, true);
     Test.init (ref args);
+    Midori.Paths.init (Midori.RuntimeMode.PRIVATE, null);
     Test.add_func ("/speeddial/load", speeddial_load);
     Test.run ();
     DirUtils.remove (temporary_cache);

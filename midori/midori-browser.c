@@ -1119,6 +1119,17 @@ midori_view_save_as_cb (GtkWidget*   menuitem,
 }
 
 static void
+midori_browser_speed_dial_refresh_cb (MidoriSpeedDial* dial,
+                                      MidoriBrowser*   browser)
+{
+    GList* tabs = midori_browser_get_tabs (browser);
+    for (; tabs != NULL; tabs = g_list_next (tabs))
+        if (midori_view_is_blank (tabs->data))
+            midori_view_reload (tabs->data, FALSE);
+    g_list_free (tabs);
+}
+
+static void
 midori_browser_add_speed_dial (MidoriBrowser* browser)
 {
     GdkPixbuf* img;
@@ -1736,6 +1747,7 @@ midori_browser_key_press_event (GtkWidget*   widget,
         gtk_widget_grab_focus (midori_browser_get_current_tab (MIDORI_BROWSER (widget)));
     else if (G_OBJECT_TYPE (focus) == WEBKIT_TYPE_WEB_VIEW
           && event->keyval == GDK_KEY_space
+          && (!(event->state & GDK_SHIFT_MASK))
           && !webkit_web_view_can_cut_clipboard (WEBKIT_WEB_VIEW (focus))
           && !webkit_web_view_can_paste_clipboard (WEBKIT_WEB_VIEW (focus)))
     {
@@ -6943,6 +6955,9 @@ _midori_browser_update_settings (MidoriBrowser* browser)
     #endif
     midori_findbar_set_close_button_left (MIDORI_FINDBAR (browser->find),
         katze_object_get_boolean (browser->settings, "close-buttons-left"));
+    if (browser->dial != NULL)
+        midori_speed_dial_set_close_buttons_left (browser->dial,
+            katze_object_get_boolean (browser->settings, "close-buttons-left"));
 
     if (remember_last_window_size)
     {
@@ -7084,6 +7099,8 @@ midori_browser_settings_notify (MidoriWebSettings* web_settings,
     {
         midori_findbar_set_close_button_left (MIDORI_FINDBAR (browser->find),
                                               g_value_get_boolean (&value));
+        midori_speed_dial_set_close_buttons_left (browser->dial,
+            katze_object_get_boolean (browser->settings, "close-buttons-left"));
     }
     else if (!g_object_class_find_property (G_OBJECT_GET_CLASS (web_settings),
                                              name))
@@ -7347,6 +7364,8 @@ midori_browser_set_property (GObject*      object,
         break;
     case PROP_SPEED_DIAL:
         browser->dial = g_value_get_pointer (value);
+        g_signal_connect (browser->dial, "refresh",
+            G_CALLBACK (midori_browser_speed_dial_refresh_cb), browser);
         break;
     case PROP_SHOW_TABS:
         browser->show_tabs = g_value_get_boolean (value);
