@@ -55,52 +55,6 @@ JSObjectRef js_create_empty_object(JSGlobalContextRef ctx){
 	return JSObjectMake(ctx, EmptyObject_class(), NULL);
 }
 
-void add_property(JSGlobalContextRef ctx, JSObjectRef emptyObject, const gchar* key, GVariant* value){
-	JSStringRef pname = JSStringCreateWithUTF8CString(g_strdup(key));
-	JSValueRef pval = NULL;
-	if(g_variant_is_of_type(value,G_VARIANT_TYPE_BOOLEAN)){
-		pval = JSValueMakeBoolean(ctx, g_variant_get_boolean(value));
-	}else if(g_variant_is_of_type(value,G_VARIANT_TYPE_INT32)){
-		double val = (double)g_variant_get_int32(value);
-		pval = JSValueMakeNumber(ctx,val);
-	}else if(g_variant_is_of_type(value,G_VARIANT_TYPE_STRING)){
-		JSStringRef pstr = JSStringCreateWithUTF8CString(g_strdup(g_variant_get_string(value, NULL)));
-		pval = JSValueMakeString(ctx, pstr);
-	}else if(g_variant_is_of_type(value,G_VARIANT_TYPE_DOUBLE)){
-		double val = (double)g_variant_get_double(value);
-		pval = JSValueMakeNumber(ctx,val);
-	}else if(g_variant_is_of_type(value,G_VARIANT_TYPE_VARDICT)){
-		JSObjectRef obj = js_create_empty_object(ctx);
-		int cnt = g_variant_n_children(value);
-		int i;
-		for(i=0;i<cnt;i++){
-			GVariant* entry = g_variant_get_child_value(value, i);
-			GVariant* entry_key = g_variant_get_child_value(entry,0);
-			GVariant* entry_value = g_variant_get_child_value(entry,1);
-			const gchar* entry_key_str = g_variant_get_string(entry_key, NULL);
-			if(g_variant_is_of_type(entry_value,G_VARIANT_TYPE_VARIANT)){
-				entry_value = g_variant_get_variant(entry_value); // boxed to have correct vardict type, but now we have to unbox for the recursive call
-			}
-			add_property(ctx, obj, entry_key_str, entry_value);
-		}
-		pval = obj;
-	}else{
-		g_warning("what's this type: %s",g_variant_get_type_string(value));
-	}
-	if(pval != NULL){
-		JSObjectSetProperty(ctx, emptyObject, pname, pval, kJSPropertyAttributeNone, NULL);
-	}
-
-}
-
-void add_property_cb(gpointer key, gpointer v, gpointer* user_data){
-	GVariant* value = (GVariant*)(v);
-	JSGlobalContextRef ctx = user_data[0];
-	JSObjectRef emptyObject = user_data[1];
-	
-	add_property( ctx, emptyObject, (gchar*) key, value);
-}
-
 char* get_string(JSStringRef string){
 	gsize s = JSStringGetMaximumUTF8CStringSize(string);
 	char* k = g_strnfill(s,'\0');
@@ -402,16 +356,6 @@ const char* js_to_json(JSGlobalContextRef ctx, JSObjectRef dict){
 	}
 }
 
-const char* to_json(JSGlobalContextRef ctx, GHashTable* dict){
-	JSObjectRef EmptyObject = js_create_empty_object(ctx);
-	gpointer userdata[] = {ctx, EmptyObject};
-	
-	g_hash_table_foreach(dict, (GHFunc)add_property_cb, userdata);
-	
-	return js_to_json(ctx, EmptyObject);
-}
-
-
 JSObjectRef js_from_json(JSGlobalContextRef ctx, const char* body, gsize len, GError** err){
 	
 	JSStringRef string;
@@ -462,6 +406,7 @@ GPtrArray* get_prop_names(JSGlobalContextRef ctx, JSObjectRef o){
 		JSStringRef jjsn = JSPropertyNameArrayGetNameAtIndex(ppnames, j);
 		g_ptr_array_add(arr, get_string(jjsn));
 	}
+	JSPropertyNameArrayRelease(ppnames);
 	return arr;
 }
 
