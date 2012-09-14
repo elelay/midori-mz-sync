@@ -118,7 +118,7 @@ gboolean register_user(SYNC_CTX* s_ctx, const char* server_url, const char* emai
 gboolean create_collection(SYNC_CTX* s_ctx, const char* collection, GError** err);
 gboolean delete_collection(SYNC_CTX* s_ctx, const char* collection, GError** err);
 gboolean add_wbos(SYNC_CTX* s_ctx, const char* collection, WBO* wbos, int cnt, GError** err);
-gboolean create_storage(SYNC_CTX* s_ctx, const char* master_key, GError** err);
+gboolean create_storage(SYNC_CTX* s_ctx, const char* master_key, const char* client_name, GError** err);
 
 // utilities
 WBO* get_wbo_by_id(GPtrArray* coll, const char* id);

@@ -54,6 +54,7 @@ void sync_folder_free(SYNC_FOLDER* f);
 void sync_bookmark_free(SYNC_BOOKMARK* b);
 gboolean create_metaglobal(SYNC_CTX* s_ctx, GError** err);
 gboolean create_cryptokeys(SYNC_CTX* s_ctx, const char* master_key, GError** err);
+gboolean create_client(SYNC_CTX* s_ctx, const char* name, const char* type, GError** err);
 
 void sync_item_free(SyncItem* itm){
 	g_free((gpointer)itm->id);
@@ -263,6 +264,23 @@ void log_error_if_verbose(const char* descr,const char* name, SoupMessage* msg){
 			if (!debug && !quiet)
 				printf ("  -> %s\n", header);
 		}
+	}
+}
+
+/* returns a 12 chars base64 random string */
+char* generate_id(GError** err){
+	guchar* buf = g_malloc(6);
+	gchar* id;
+	int success = RAND_pseudo_bytes(buf, 6);
+	if(success == -1){
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED,
+			"Generating random bytes seems to be unsupported (errcode=%lu)", ERR_get_error());
+		g_free(buf);
+		return NULL;
+	}else{
+		id = g_base64_encode(buf, 6);
+		g_free(buf);
+		return id;
 	}
 }
 
@@ -788,7 +806,7 @@ gboolean add_wbos_int(SYNC_CTX* s_ctx, const char* username, const char* end_poi
 		log_error_if_verbose("in create_collection",name, msg);
 		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
 			"error creating collection %s: server replied with %i",collection, msg->status_code);
-		res = false;
+		res = FALSE;
 	}
 	
 	g_string_free(url,TRUE);
@@ -1730,90 +1748,67 @@ gboolean verify_storage(SYNC_CTX* s_ctx, GError** err){
 	return TRUE;
 }
 
-void create_key_bundle(SYNC_CTX* s_ctx, GError** err){
-}
-
-gboolean create_storage(SYNC_CTX* s_ctx, const char* master_key, GError** err){
+gboolean create_storage(SYNC_CTX* s_ctx, const char* master_key, const char* client_name, GError** err){
 	if(!create_metaglobal(s_ctx, err)){
 		return FALSE;
 	}
-	return create_cryptokeys(s_ctx, master_key, err);
+	if(!create_cryptokeys(s_ctx, master_key, err)){
+		return FALSE;
+	}
+	return create_client(s_ctx, client_name, "desktop", err);
 }
 
 
 gboolean create_metaglobal(SYNC_CTX* s_ctx, GError** err){
-	GString* url;
-	const char *name;
-	SoupMessage *msg;
-	gboolean res;
-	const char* method;
-	GString* body;
+	GError* tmp_error = NULL;
 	JSObjectRef global_payload;
 	WBO* wbo = g_malloc(sizeof(WBO));
 	wbo->id = g_strdup("global");
+	const char* id;
+	
+	id = generate_id(&tmp_error);
+	if(id == NULL){
+		g_propagate_prefixed_error(err, tmp_error, "Unable to create meta/global record, unable to generate id: ");
+		g_free(wbo);
+		return FALSE;
+	}
 	
 	global_payload = js_create_empty_object(s_ctx->ctx);
-	g_assert(set_string_prop(s_ctx->ctx, global_payload, "syncId", "IPUB7g3zdp7O", err)); // FIXME: generate 12 random base64 characters
+	g_assert(set_string_prop(s_ctx->ctx, global_payload, "syncId", id, err));// uniqueness is not necessary here: we're the first
 	g_assert(set_int_prop(s_ctx->ctx, global_payload, "storageVersion", SYNC_SUPPORTED_VERSION, err));
+	g_free((gpointer)id);
 	
 	JSObjectRef engines = js_create_empty_object(s_ctx->ctx);
 	
 	int i;
+	id = generate_id(&tmp_error);// uniqueness is not necessary here: we're the first
+	if(id == NULL){
+		g_propagate_prefixed_error(err, tmp_error, "Unable to create meta/global record, unable to generate id: ");
+		g_free(wbo);
+		return FALSE;
+	}
 	for(i=0;i<SUP_CNT;i++){
 		JSObjectRef engine = js_create_empty_object(s_ctx->ctx);
 		g_assert (set_int_prop(s_ctx->ctx, engine, "version", sup_v[i], err));
-		g_assert (set_string_prop(s_ctx->ctx, engine, "synId", "IPUB7g3zd22O", err)); // FIXME: generate 12 random base64 characters
+		g_assert (set_string_prop(s_ctx->ctx, engine, "synId", id, err));
 		g_assert (set_object_prop(s_ctx->ctx, engines, sup[i], engine, err));
 	}
+	g_free((gpointer)id);
 	g_assert (set_object_prop(s_ctx->ctx, global_payload, "engines", engines, err));
 	
 	wbo->payload = js_to_json(s_ctx->ctx, global_payload);
 	
-	url = g_string_new(s_ctx->end_point);
-	g_string_append_printf(url, "1.1/%s/storage/meta/global",s_ctx->enc_user);
-	
-	method = SOUP_METHOD_PUT;
-	
-	msg = soup_message_new (method, url->str);
-	
-	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
-	
-	const char* jsn = wbo_to_json(s_ctx, wbo, err);
-	g_assert(jsn != NULL);
-	body = g_string_new(jsn);
-
-	soup_message_set_request(msg, "text/plain", SOUP_MEMORY_TEMPORARY, body->str, body->len);
-	
-	soup_session_send_message (s_ctx->session, msg);
-	
-	g_string_free(body, TRUE);
-	
-	name = soup_message_get_uri (msg)->path;
-	
-	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
-		res = TRUE;
-	} else {
-		log_error_if_verbose("in create_storage",name, msg);
-		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
-			"error in create_storage (creating meta/global): server replied with %i",msg->status_code);
-		res = FALSE;
+	if(!add_wbos(s_ctx, "meta", wbo, 1, &tmp_error)){
+		g_propagate_prefixed_error(err, tmp_error, "Unable to upload meta/global record: ");
+		g_free(wbo);
+		return FALSE;
 	}
-	
-	g_object_unref(msg);
-	g_string_free(url,TRUE);
-	
-	
-	return res;
+	g_free(wbo);
+	return TRUE;
 }
 
 gboolean create_cryptokeys(SYNC_CTX* s_ctx, const char* master_key, GError** err){
 	GError* tmp_error = NULL;
-	GString* url;
-	const char *name;
-	SoupMessage *msg;
-	gboolean res;
-	const char* method;
-	GString* body;
 	JSObjectRef keys_payload;
 	WBO* wbo = g_malloc(sizeof(WBO));
 	wbo->id = g_strdup("keys");
@@ -1860,6 +1855,7 @@ gboolean create_cryptokeys(SYNC_CTX* s_ctx, const char* master_key, GError** err
 	set_string_array_prop(s_ctx->ctx, keys_payload, "default", bulk, &tmp_error);
 	if(tmp_error != NULL){
 		g_propagate_error(err, tmp_error);
+		wbo_free(wbo);
 		return FALSE;
 	}
 	
@@ -1875,57 +1871,95 @@ gboolean create_cryptokeys(SYNC_CTX* s_ctx, const char* master_key, GError** err
 	
 	encoded = encrypt_wbo_int(s_ctx, s_ctx->master_key, s_ctx->master_hmac, wbo, &tmp_error);
 	if(encoded == NULL){
+		g_assert(tmp_error!=NULL);
 		g_propagate_error(err, tmp_error);
+		wbo_free(wbo);
 		return FALSE;
 	}else{
+		g_free((gpointer)wbo->payload);
 		wbo->payload = encoded;
 	}
 	
-	url = g_string_new(s_ctx->end_point);
-	g_string_append_printf(url, "1.1/%s/storage/crypto/keys",s_ctx->enc_user);
-	
-	method = SOUP_METHOD_PUT;
-	
-	msg = soup_message_new (method, url->str);
-	
-	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
-	
-	const char* json = wbo_to_json(s_ctx, wbo, err);
-	g_assert(json != NULL);
-	body = g_string_new(json);
-
-	wbo_free(wbo);
-	
-	
-	soup_message_set_request(msg, "text/plain", SOUP_MEMORY_TEMPORARY, body->str, body->len);
-	
-	soup_session_send_message (s_ctx->session, msg);
-	
-	g_string_free(body, TRUE);
-	
-	name = soup_message_get_uri (msg)->path;
-	
-	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
-		res = TRUE;
-	} else {
-		log_error_if_verbose("in create_storage",name, msg);
-		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_COMMUNICATION,
-			"error in create_storage (creating meta/global): server replied with %i",msg->status_code);
-		res = FALSE;
+	if(!add_wbos(s_ctx, "crypto", wbo, 1, &tmp_error)){
+		g_propagate_prefixed_error(err, tmp_error, "Unable to upload crypto/keys record: ");
+		wbo_free(wbo);
+		return FALSE;
 	}
 	
-	g_object_unref(msg);
-	g_string_free(url,TRUE);
+	wbo_free(wbo);
 	
+	return TRUE;
+}
+
+gboolean create_client(SYNC_CTX* s_ctx, const char* client_name, const char* client_type, GError** err){
+	GError* tmp_error = NULL;
+	const char* encoded;
+	JSObjectRef client_payload;
+	WBO* wbo = g_malloc(sizeof(WBO));
+	wbo->id = generate_id(&tmp_error);
 	
-	return res;
+	if(wbo->id == NULL){
+		g_propagate_prefixed_error(err, tmp_error, "Unable to create client record, unable to generate id: ");
+		g_free(wbo);
+		return FALSE;
+	}
+	
+	client_payload = js_create_empty_object(s_ctx->ctx);
+                     
+	if(!set_string_prop(s_ctx->ctx, client_payload, "name", client_name, &tmp_error)){
+		g_assert(tmp_error!=NULL);
+		g_propagate_prefixed_error(err, tmp_error, "Unable to create client record (invalid name '%s'?): ", client_name);
+		wbo_free(wbo);
+		return FALSE;
+	}
+
+	if(!set_string_prop(s_ctx->ctx, client_payload, "type", client_type, &tmp_error)){
+		g_assert(tmp_error!=NULL);
+		g_propagate_prefixed_error(err, tmp_error, "Unable to create client record (invalid type '%s'?): ", client_type);
+		wbo_free(wbo);
+		return FALSE;
+	}
+	
+	GPtrArray* cmds = g_ptr_array_sized_new(0);
+	if(!set_string_array_prop(s_ctx->ctx, client_payload, "commands", cmds, &tmp_error)){
+		g_assert(tmp_error!=NULL);
+		g_propagate_error(err, tmp_error);
+		wbo_free(wbo);
+		g_ptr_array_unref(cmds);
+		return FALSE;
+	}
+	
+	g_ptr_array_unref(cmds);
+	
+	wbo->payload = js_to_json(s_ctx->ctx, client_payload);
+	
+	encoded = encrypt_wbo(s_ctx, "clients", wbo, &tmp_error);
+	if(encoded == NULL){
+		g_assert(tmp_error!=NULL);
+		g_propagate_error(err, tmp_error);
+		wbo_free(wbo);
+		return FALSE;
+	}else{
+		g_free((gpointer)wbo->payload);
+		wbo->payload = encoded;
+	}
+	
+	if(!add_wbos(s_ctx, "clients", wbo, 1, &tmp_error)){
+		g_assert(tmp_error!=NULL);
+		g_propagate_prefixed_error(err, tmp_error, "Unable to upload client record: ");
+		wbo_free(wbo);
+		return FALSE;
+	}
+	
+	wbo_free(wbo);
+	return TRUE;
 }
 
 
 SyncItem* get_bookmark_rec(SYNC_CTX* s_ctx, GPtrArray* bookmarks_wbo, WBO* itm, JSObjectRef wbo_json, GError** err){
 	
 	GError* tmp_error = NULL;
-	g_message("get_bookmark_rec(%s)",itm->id);
+	//g_message("get_bookmark_rec(%s)",itm->id);
 	g_assert(err == NULL || *err == NULL);
 	
 	const char* s = get_string_prop(s_ctx->ctx, wbo_json, "id", &tmp_error);

@@ -11,61 +11,102 @@
  Based on midori/extensions/feed-panel/feed-panel.c,
  Copyright (C) 2009 Dale Whittaker <dale@users.sf.net>
 */
-#include "my-sync-panel.h"
+#include "mz-sync-panel.h"
 
 #include <midori/midori.h>
 #include <time.h>
 
-#define STOCK_MY_SYNC_PANEL "my-sync-panel"
-
-struct _MySyncPanel
+#define STOCK_MZ_SYNC_PANEL "mz-sync-panel"
+            
+struct _MzSyncPanel
 {
     GtkVBox parent_instance;
 
     GtkWidget* toolbar;
     GtkWidget* treeview;
     GdkPixbuf* pixbuf;
+    GtkWidget* infobar;
 };
 
-struct _MySyncPanelClass
+struct _MzSyncPanelClass
 {
     GtkVBoxClass parent_class;
 };
 
 static void
-my_sync_panel_viewable_iface_init (MidoriViewableIface* iface);
+mz_sync_panel_viewable_iface_init (MidoriViewableIface* iface);
 
 static void
-my_sync_panel_insert_item (MySyncPanel*    panel,
+mz_sync_panel_insert_item (MzSyncPanel*    panel,
                         GtkTreeStore* treestore,
                         GtkTreeIter*  parent,
                         KatzeItem*    item);
 
 static void
-my_sync_panel_disconnect_feed (MySyncPanel*  panel,
+mz_sync_panel_disconnect_feed (MzSyncPanel*  panel,
                             KatzeArray* feed);
 
-G_DEFINE_TYPE_WITH_CODE (MySyncPanel, my_sync_panel, GTK_TYPE_VBOX,
+G_DEFINE_TYPE_WITH_CODE (MzSyncPanel, mz_sync_panel, GTK_TYPE_VBOX,
                          G_IMPLEMENT_INTERFACE (MIDORI_TYPE_VIEWABLE,
-                            my_sync_panel_viewable_iface_init));
+                            mz_sync_panel_viewable_iface_init));
 
 enum
 {
     ADD_FEED,
     REMOVE_FEED,
     PREFERENCES,
-
+    SYNC_NOW,
+    
     LAST_SIGNAL
 };
 
 static guint signals[LAST_SIGNAL];
 
+
+void
+mz_sync_panel_sync_started_cb                     (MzSyncExtension* instance, MzSyncPanel*  panel)
+{
+	GtkWidget* status;
+	
+	gtk_info_bar_set_message_type (GTK_INFO_BAR (panel->infobar),
+		GTK_MESSAGE_INFO);
+	
+	status = g_object_get_data(G_OBJECT (panel->infobar), "status");
+	
+	gtk_label_set_text(GTK_LABEL(status), "Sync Started");
+}
+
+void
+mz_sync_panel_sync_ended_cb                     (MzSyncExtension* instance,
+                                          MzSyncStatus* status,
+                                          MzSyncPanel*  panel)
+{
+	GtkWidget* label;
+	gboolean success = status->success;
+	GError* error = status->error;
+	label = g_object_get_data(G_OBJECT (panel->infobar), "status");
+
+	gtk_info_bar_set_message_type (GTK_INFO_BAR (panel->infobar),
+		success? GTK_MESSAGE_INFO : GTK_MESSAGE_ERROR);
+
+	if(success){
+		gtk_label_set_text(GTK_LABEL(label), "Sync Ended successfully");
+	}else{
+		if(error != NULL){
+			gtk_label_set_text(GTK_LABEL(label), error->message);
+		}else{
+			gtk_label_set_text(GTK_LABEL(label), "Sync error!!!");
+		}
+	}
+}
+
+
 static void
-my_sync_panel_treeview_render_icon_cb (GtkTreeViewColumn* column,
+mz_sync_panel_treeview_render_icon_cb (GtkTreeViewColumn* column,
                                     GtkCellRenderer*   renderer,
                                     GtkTreeModel*      model,
                                     GtkTreeIter*       iter,
-                                    MySyncPanel*         panel)
+                                    MzSyncPanel*         panel)
 {
     GdkPixbuf* pixbuf;
     KatzeItem* item;
@@ -103,7 +144,7 @@ my_sync_panel_treeview_render_icon_cb (GtkTreeViewColumn* column,
 }
 
 static void
-my_sync_panel_treeview_render_text_cb (GtkTreeViewColumn* column,
+mz_sync_panel_treeview_render_text_cb (GtkTreeViewColumn* column,
                                     GtkCellRenderer*   renderer,
                                     GtkTreeModel*      model,
                                     GtkTreeIter*       iter,
@@ -129,7 +170,7 @@ my_sync_panel_treeview_render_text_cb (GtkTreeViewColumn* column,
  * the returned path may be invalid if the tree is out of sync with the KatzeArrays structure
  */
 static gboolean
-my_sync_panel_get_tree_path(GtkTreeModel* model, KatzeItem* item, GtkTreePath* ret)
+mz_sync_panel_get_tree_path(GtkTreeModel* model, KatzeItem* item, GtkTreePath* ret)
 {
     KatzeArray* parent = katze_item_get_parent (item);
     if(parent == NULL)
@@ -142,22 +183,22 @@ my_sync_panel_get_tree_path(GtkTreeModel* model, KatzeItem* item, GtkTreePath* r
     	        return false;
     	    }else{
                 gtk_tree_path_prepend_index(ret, index);
-                return my_sync_panel_get_tree_path(model, KATZE_ITEM(parent), ret);
+                return mz_sync_panel_get_tree_path(model, KATZE_ITEM(parent), ret);
             }
     }
     
 }
 
 static void
-my_sync_panel_add_item_cb (KatzeArray* parent,
+mz_sync_panel_add_item_cb (KatzeArray* parent,
                         KatzeItem*  child,
-                        MySyncPanel*  panel)
+                        MzSyncPanel*  panel)
 {
     GtkTreeModel* model;
     GtkTreeIter iter;
     GtkTreeIter child_iter;
 
-    g_return_if_fail (MY_SYNC_IS_PANEL (panel));
+    g_return_if_fail (MZ_SYNC_IS_PANEL (panel));
     g_return_if_fail (KATZE_IS_ARRAY (parent));
     g_return_if_fail (KATZE_IS_ITEM (child));
 
@@ -168,7 +209,7 @@ my_sync_panel_add_item_cb (KatzeArray* parent,
     {
         // otherwise, add them under the path to the parent
 	    GtkTreePath* path = gtk_tree_path_new ();
-	    if(my_sync_panel_get_tree_path(model, KATZE_ITEM(parent), path)){
+	    if(mz_sync_panel_get_tree_path(model, KATZE_ITEM(parent), path)){
 	        g_assert(gtk_tree_model_get_iter(model, &iter, path));
 	        
 	        // TODO: extra safety, but costly: remove when I'm confident
@@ -189,11 +230,11 @@ my_sync_panel_add_item_cb (KatzeArray* parent,
             gtk_tree_store_insert_with_values (GTK_TREE_STORE (model), &child_iter,
                 NULL, G_MAXINT, 0, child, -1);
     }
-    my_sync_panel_insert_item (panel, GTK_TREE_STORE (model), &child_iter, child);
+    mz_sync_panel_insert_item (panel, GTK_TREE_STORE (model), &child_iter, child);
 }
 
 static void
-my_sync_panel_remove_iter (GtkTreeModel* model,
+mz_sync_panel_remove_iter (GtkTreeModel* model,
                         KatzeItem*    removed_item)
 {
     guint i;
@@ -218,47 +259,37 @@ my_sync_panel_remove_iter (GtkTreeModel* model,
 }
 
 static void
-my_sync_panel_remove_item_cb (KatzeArray* item,
+mz_sync_panel_remove_item_cb (KatzeArray* item,
                            KatzeItem*  child,
-                           MySyncPanel*  panel)
+                           MzSyncPanel*  panel)
 {
     GtkTreeModel* model;
     KatzeItem* pitem;
 
-    g_return_if_fail (MY_SYNC_IS_PANEL (panel));
+    g_return_if_fail (MZ_SYNC_IS_PANEL (panel));
     g_return_if_fail (KATZE_IS_ARRAY (item));
     g_return_if_fail (KATZE_IS_ITEM (child));
 
     if (KATZE_IS_ARRAY (child))
-        my_sync_panel_disconnect_feed (panel, KATZE_ARRAY (child));
-
-    if (!katze_item_get_parent (KATZE_ITEM (item)))
-    {
-        gint n;
-
-        n = katze_array_get_length (KATZE_ARRAY (child));
-        g_assert (n == 1);
-        pitem = katze_array_get_nth_item (KATZE_ARRAY (child), 0);
-    }
-    else
+        mz_sync_panel_disconnect_feed (panel, KATZE_ARRAY (child));
         pitem = child;
 
     model = gtk_tree_view_get_model (GTK_TREE_VIEW (panel->treeview));
-    my_sync_panel_remove_iter (model, pitem);
+    mz_sync_panel_remove_iter (model, pitem);
     g_object_unref (pitem);
 }
 
 static void
-my_sync_panel_move_item_cb (KatzeArray* feed,
+mz_sync_panel_move_item_cb (KatzeArray* feed,
                          KatzeItem*  child,
                          gint        position,
-                         MySyncPanel*  panel)
+                         MzSyncPanel*  panel)
 {
     GtkTreeModel* model;
     GtkTreeIter iter;
     guint i;
 
-    g_return_if_fail (MY_SYNC_IS_PANEL (panel));
+    g_return_if_fail (MZ_SYNC_IS_PANEL (panel));
     g_return_if_fail (KATZE_IS_ARRAY (feed));
     g_return_if_fail (KATZE_IS_ITEM (child));
 
@@ -283,7 +314,7 @@ my_sync_panel_move_item_cb (KatzeArray* feed,
 }
 
 static void
-my_sync_panel_disconnect_feed (MySyncPanel*  panel,
+mz_sync_panel_disconnect_feed (MzSyncPanel*  panel,
                             KatzeArray* feed)
 {
     KatzeItem* item;
@@ -291,48 +322,59 @@ my_sync_panel_disconnect_feed (MySyncPanel*  panel,
     g_return_if_fail (KATZE_IS_ARRAY (feed));
 
     g_signal_handlers_disconnect_by_func (feed,
-            my_sync_panel_add_item_cb, panel);
+            mz_sync_panel_add_item_cb, panel);
     g_signal_handlers_disconnect_by_func (feed,
-            my_sync_panel_remove_item_cb, panel);
+            mz_sync_panel_remove_item_cb, panel);
     g_signal_handlers_disconnect_by_func (feed,
-            my_sync_panel_move_item_cb, panel);
+            mz_sync_panel_move_item_cb, panel);
 
     KATZE_ARRAY_FOREACH_ITEM (item, feed)
     {
         if (KATZE_IS_ARRAY (item))
-            my_sync_panel_disconnect_feed (panel, KATZE_ARRAY (item));
+            mz_sync_panel_disconnect_feed (panel, KATZE_ARRAY (item));
         g_object_unref (item);
     }
 }
 
 static void
-my_sync_panel_insert_item (MySyncPanel*    panel,
+mz_sync_panel_insert_item (MzSyncPanel*    panel,
                         GtkTreeStore* treestore,
                         GtkTreeIter*  parent,
                         KatzeItem*    item)
 {
+	KatzeItem* child;
+	GList* list;
+	
     g_return_if_fail (KATZE_IS_ITEM (item));
 
     if (KATZE_IS_ARRAY (item))
     {
         g_signal_connect_after (item, "add-item",
-            G_CALLBACK (my_sync_panel_add_item_cb), panel);
+            G_CALLBACK (mz_sync_panel_add_item_cb), panel);
         g_signal_connect_after (item, "move-item",
-            G_CALLBACK (my_sync_panel_move_item_cb), panel);
+            G_CALLBACK (mz_sync_panel_move_item_cb), panel);
 
         if (!parent)
         {
             g_signal_connect (item, "remove-item",
-                G_CALLBACK (my_sync_panel_remove_item_cb), panel);
+                G_CALLBACK (mz_sync_panel_remove_item_cb), panel);
         }
+
+        // add already present children
+		KATZE_ARRAY_FOREACH_ITEM_L (child, KATZE_ARRAY(item), list)
+		{
+			mz_sync_panel_add_item_cb(KATZE_ARRAY(item), child, panel);
+			g_object_unref (child);
+		}
+		g_free(list);
     }
 }
 
 static void
-my_sync_panel_row_activated_cb (GtkTreeView*       treeview,
+mz_sync_panel_row_activated_cb (GtkTreeView*       treeview,
                              GtkTreePath*       path,
                              GtkTreeViewColumn* column,
-                             MySyncPanel*         panel)
+                             MzSyncPanel*         panel)
 {
     GtkTreeModel* model;
     GtkTreeIter iter;
@@ -361,18 +403,18 @@ my_sync_panel_row_activated_cb (GtkTreeView*       treeview,
 }
 
 static void
-my_sync_panel_cursor_or_row_changed_cb (GtkTreeView* treeview,
-                                     MySyncPanel*   panel)
+mz_sync_panel_cursor_or_row_changed_cb (GtkTreeView* treeview,
+                                     MzSyncPanel*   panel)
 {
 }
 
 static void
-my_sync_panel_popup_item (GtkWidget*     menu,
+mz_sync_panel_popup_item (GtkWidget*     menu,
                        const gchar*   stock_id,
                        const gchar*   label,
                        KatzeItem*     item,
                        gpointer       callback,
-                       MySyncPanel*     panel)
+                       MzSyncPanel*     panel)
 {
     GtkWidget* menuitem;
 
@@ -387,8 +429,8 @@ my_sync_panel_popup_item (GtkWidget*     menu,
 }
 
 static void
-my_sync_panel_open_activate_cb (GtkWidget* menuitem,
-                             MySyncPanel* panel)
+mz_sync_panel_open_activate_cb (GtkWidget* menuitem,
+                             MzSyncPanel* panel)
 {
     KatzeItem* item;
     const gchar* uri;
@@ -406,8 +448,8 @@ my_sync_panel_open_activate_cb (GtkWidget* menuitem,
 }
 
 static void
-my_sync_panel_open_in_tab_activate_cb (GtkWidget* menuitem,
-                                    MySyncPanel* panel)
+mz_sync_panel_open_in_tab_activate_cb (GtkWidget* menuitem,
+                                    MzSyncPanel* panel)
 {
     KatzeItem* item;
     const gchar* uri;
@@ -429,8 +471,8 @@ my_sync_panel_open_in_tab_activate_cb (GtkWidget* menuitem,
 }
 
 static void
-my_sync_panel_open_in_window_activate_cb (GtkWidget* menuitem,
-                                       MySyncPanel* panel)
+mz_sync_panel_open_in_window_activate_cb (GtkWidget* menuitem,
+                                       MzSyncPanel* panel)
 {
     KatzeItem* item;
     const gchar* uri;
@@ -450,39 +492,39 @@ my_sync_panel_open_in_window_activate_cb (GtkWidget* menuitem,
 }
 
 static void
-my_sync_panel_delete_activate_cb (GtkWidget* menuitem,
-                               MySyncPanel* panel)
+mz_sync_panel_delete_activate_cb (GtkWidget* menuitem,
+                               MzSyncPanel* panel)
 {
     KatzeItem* item;
 
-    g_return_if_fail (MY_SYNC_IS_PANEL (panel));
+    g_return_if_fail (MZ_SYNC_IS_PANEL (panel));
 
     item = (KatzeItem*)g_object_get_data (G_OBJECT (menuitem), "KatzeItem");
     g_signal_emit (panel, signals[REMOVE_FEED], 0, item);
 }
 
 static void
-my_sync_panel_popup (GtkWidget*      widget,
+mz_sync_panel_popup (GtkWidget*      widget,
                   GdkEventButton* event,
                   KatzeItem*      item,
-                  MySyncPanel*      panel)
+                  MzSyncPanel*      panel)
 {
     GtkWidget* menu;
 
     menu = gtk_menu_new ();
     if (!KATZE_IS_ARRAY (item))
     {
-        my_sync_panel_popup_item (menu, GTK_STOCK_OPEN, NULL,
-            item, my_sync_panel_open_activate_cb, panel);
-        my_sync_panel_popup_item (menu, STOCK_TAB_NEW, _("Open in New _Tab"),
-            item, my_sync_panel_open_in_tab_activate_cb, panel);
-        my_sync_panel_popup_item (menu, STOCK_WINDOW_NEW, _("Open in New _Window"),
-            item, my_sync_panel_open_in_window_activate_cb, panel);
+        mz_sync_panel_popup_item (menu, GTK_STOCK_OPEN, NULL,
+            item, mz_sync_panel_open_activate_cb, panel);
+        mz_sync_panel_popup_item (menu, STOCK_TAB_NEW, _("Open in New _Tab"),
+            item, mz_sync_panel_open_in_tab_activate_cb, panel);
+        mz_sync_panel_popup_item (menu, STOCK_WINDOW_NEW, _("Open in New _Window"),
+            item, mz_sync_panel_open_in_window_activate_cb, panel);
     }
     else
     {
-        my_sync_panel_popup_item (menu, GTK_STOCK_DELETE, NULL,
-            item, my_sync_panel_delete_activate_cb, panel);
+        mz_sync_panel_popup_item (menu, GTK_STOCK_DELETE, NULL,
+            item, mz_sync_panel_delete_activate_cb, panel);
     }
 
     katze_widget_popup (widget, GTK_MENU (menu),
@@ -490,9 +532,9 @@ my_sync_panel_popup (GtkWidget*      widget,
 }
 
 static gboolean
-my_sync_panel_button_release_event_cb (GtkWidget*      widget,
+mz_sync_panel_button_release_event_cb (GtkWidget*      widget,
                                     GdkEventButton* event,
-                                    MySyncPanel*      panel)
+                                    MzSyncPanel*      panel)
 {
     GtkTreeModel* model;
     GtkTreeIter iter;
@@ -525,7 +567,7 @@ my_sync_panel_button_release_event_cb (GtkWidget*      widget,
             }
         }
         else
-            my_sync_panel_popup (widget, event, item, panel);
+            mz_sync_panel_popup (widget, event, item, panel);
 
         g_object_unref (item);
         return TRUE;
@@ -534,8 +576,8 @@ my_sync_panel_button_release_event_cb (GtkWidget*      widget,
 }
 
 static void
-my_sync_panel_popup_menu_cb (GtkWidget* widget,
-                          MySyncPanel* panel)
+mz_sync_panel_popup_menu_cb (GtkWidget* widget,
+                          MzSyncPanel* panel)
 {
     GtkTreeModel* model;
     GtkTreeIter iter;
@@ -544,44 +586,57 @@ my_sync_panel_popup_menu_cb (GtkWidget* widget,
     if (katze_tree_view_get_selected_iter (GTK_TREE_VIEW (widget), &model, &iter))
     {
         gtk_tree_model_get (model, &iter, 0, &item, -1);
-        my_sync_panel_popup (widget, NULL, item, panel);
+        mz_sync_panel_popup (widget, NULL, item, panel);
         g_object_unref (item);
     }
 }
 
 void
-my_sync_panel_add_feeds (MySyncPanel* panel,
+mz_sync_panel_add_feeds (MzSyncPanel* panel,
                       KatzeItem* feed)
 {
     GtkTreeModel* model;
+    //KatzeItem* item;
 
     model = gtk_tree_view_get_model (GTK_TREE_VIEW (panel->treeview));
     g_assert (GTK_IS_TREE_MODEL (model));
 
-    my_sync_panel_insert_item (panel, GTK_TREE_STORE (model), NULL, feed);
+    mz_sync_panel_insert_item (panel, GTK_TREE_STORE (model), NULL, feed);
+    
+    // KATZE_ARRAY_FOREACH_ITEM (item, KATZE_ARRAY(feed))
+    // {
+    //     mz_sync_panel_add_item_cb(KATZE_ARRAY(feed), item, panel);
+    //     g_object_unref (item);
+    // }
+    
 }
 
 static const gchar*
-my_sync_panel_get_label (MidoriViewable* viewable)
+mz_sync_panel_get_label (MidoriViewable* viewable)
 {
     return _("MOZ SYNC");
 }
 
 static const gchar*
-my_sync_panel_get_stock_id (MidoriViewable* viewable)
+mz_sync_panel_get_stock_id (MidoriViewable* viewable)
 {
-    return STOCK_MY_SYNC_PANEL;
+    return STOCK_MZ_SYNC_PANEL;
 }
 
-static void my_sync_panel_preferences_clicked_cb (GtkWidget* toolitem, MySyncPanel* self)
+static void mz_sync_panel_preferences_clicked_cb (GtkWidget* toolitem, MzSyncPanel* self)
 {
 	g_signal_emit_by_name(self,"preferences");
 }
 
-static GtkWidget*
-my_sync_panel_get_toolbar (MidoriViewable* viewable)
+static void mz_sync_panel_sync_now_clicked_cb (GtkWidget* toolitem, MzSyncPanel* self)
 {
-    MySyncPanel* panel = MY_SYNC_PANEL (viewable);
+	g_signal_emit_by_name(self,"sync-now");
+}
+
+static GtkWidget*
+mz_sync_panel_get_toolbar (MidoriViewable* viewable)
+{
+    MzSyncPanel* panel = MZ_SYNC_PANEL (viewable);
 
     if (!panel->toolbar)
     {
@@ -593,13 +648,29 @@ my_sync_panel_get_toolbar (MidoriViewable* viewable)
         gtk_toolbar_set_show_arrow (GTK_TOOLBAR (toolbar), FALSE);
         panel->toolbar = toolbar;
         
+
+        toolitem = gtk_tool_button_new_from_stock (GTK_STOCK_REFRESH);
+        gtk_widget_set_name (GTK_WIDGET (toolitem), _("Sync Now"));
+        gtk_widget_set_tooltip_text (GTK_WIDGET (toolitem),
+                                     _("Sync Now instead of in X minutes"));
+        //gtk_tool_item_set_is_important (toolitem, TRUE);
+        g_signal_connect (toolitem, "clicked",
+            G_CALLBACK (mz_sync_panel_sync_now_clicked_cb), panel);
+        gtk_toolbar_insert (GTK_TOOLBAR (toolbar), toolitem, 0);
+        gtk_widget_show (GTK_WIDGET (toolitem));
+
+        toolitem = gtk_tool_item_new ();
+        gtk_tool_item_set_expand (GTK_TOOL_ITEM(toolitem), TRUE);
+        gtk_widget_show (GTK_WIDGET (toolitem));
+        gtk_toolbar_insert (GTK_TOOLBAR (toolbar), toolitem, 1);
+
         toolitem = gtk_tool_button_new_from_stock (GTK_STOCK_PREFERENCES);
         gtk_widget_set_name (GTK_WIDGET (toolitem), "Preferences");
         gtk_widget_set_tooltip_text (GTK_WIDGET (toolitem),
                                      _("Preferences"));
         //gtk_tool_item_set_is_important (toolitem, TRUE);
         g_signal_connect (toolitem, "clicked",
-            G_CALLBACK (my_sync_panel_preferences_clicked_cb), panel);
+            G_CALLBACK (mz_sync_panel_preferences_clicked_cb), panel);
         gtk_toolbar_insert (GTK_TOOLBAR (toolbar), toolitem, -1);
         gtk_widget_show (GTK_WIDGET (toolitem));
 
@@ -610,28 +681,28 @@ my_sync_panel_get_toolbar (MidoriViewable* viewable)
 }
 
 static void
-my_sync_panel_finalize (GObject* object)
+mz_sync_panel_finalize (GObject* object)
 {
-    MySyncPanel* panel = MY_SYNC_PANEL (object);
+    MzSyncPanel* panel = MZ_SYNC_PANEL (object);
 
     g_object_unref (panel->pixbuf);
 }
 
 static void
-my_sync_panel_viewable_iface_init (MidoriViewableIface* iface)
+mz_sync_panel_viewable_iface_init (MidoriViewableIface* iface)
 {
-    iface->get_stock_id = my_sync_panel_get_stock_id;
-    iface->get_label = my_sync_panel_get_label;
-    iface->get_toolbar = my_sync_panel_get_toolbar;
+    iface->get_stock_id = mz_sync_panel_get_stock_id;
+    iface->get_label = mz_sync_panel_get_label;
+    iface->get_toolbar = mz_sync_panel_get_toolbar;
 }
 
 static void
-my_sync_panel_class_init (MySyncPanelClass* class)
+mz_sync_panel_class_init (MzSyncPanelClass* class)
 {
     GObjectClass* gobject_class;
 
     signals[ADD_FEED] = g_signal_new (
-        "add-my_sync",
+        "add-mz_sync",
         G_TYPE_FROM_CLASS (class),
         (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
         0,
@@ -641,7 +712,7 @@ my_sync_panel_class_init (MySyncPanelClass* class)
         G_TYPE_NONE, 0);
 
     signals[REMOVE_FEED] = g_signal_new (
-        "remove-my_sync",
+        "remove-mz_sync",
         G_TYPE_FROM_CLASS (class),
         (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
         0,
@@ -661,12 +732,22 @@ my_sync_panel_class_init (MySyncPanelClass* class)
         g_cclosure_marshal_VOID__POINTER,
         G_TYPE_NONE, 0);
 
+    signals[SYNC_NOW] = g_signal_new (
+        "sync-now",
+        G_TYPE_FROM_CLASS (class),
+        (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
+        0,
+        0,
+        NULL,
+        g_cclosure_marshal_VOID__POINTER,
+        G_TYPE_NONE, 0);
+
     gobject_class = G_OBJECT_CLASS (class);
-    gobject_class->finalize = my_sync_panel_finalize;
+    gobject_class->finalize = mz_sync_panel_finalize;
 }
 
 static void
-my_sync_panel_init (MySyncPanel* panel)
+mz_sync_panel_init (MzSyncPanel* panel)
 {
     GtkTreeStore* model;
     GtkWidget* treewin;
@@ -677,9 +758,13 @@ my_sync_panel_init (MySyncPanel* panel)
     GtkIconFactory *factory;
     GtkIconSource *icon_source;
     GtkIconSet *icon_set;
+    GtkWidget* infobar;
+    GtkWidget* status;
+    GtkWidget* info_area;
+    
     GtkStockItem items[] =
     {
-        { STOCK_MY_SYNC_PANEL, N_("_MOZ_SYNC"), 0, 0, NULL }
+        { STOCK_MZ_SYNC_PANEL, N_("_MOZ_SYNC"), 0, 0, NULL }
     };
 
     factory = gtk_icon_factory_new ();
@@ -689,7 +774,7 @@ my_sync_panel_init (MySyncPanel* panel)
     gtk_icon_source_set_icon_name (icon_source, STOCK_NEWS_FEED);
     gtk_icon_set_add_source (icon_set, icon_source);
     gtk_icon_source_free (icon_source);
-    gtk_icon_factory_add (factory, STOCK_MY_SYNC_PANEL, icon_set);
+    gtk_icon_factory_add (factory, STOCK_MZ_SYNC_PANEL, icon_set);
     gtk_icon_set_unref (icon_set);
     gtk_icon_factory_add_default (factory);
     g_object_unref (factory);
@@ -702,26 +787,26 @@ my_sync_panel_init (MySyncPanel* panel)
     renderer_pixbuf = gtk_cell_renderer_pixbuf_new ();
     gtk_tree_view_column_pack_start (column, renderer_pixbuf, FALSE);
     gtk_tree_view_column_set_cell_data_func (column, renderer_pixbuf,
-            (GtkTreeCellDataFunc)my_sync_panel_treeview_render_icon_cb,
+            (GtkTreeCellDataFunc)mz_sync_panel_treeview_render_icon_cb,
             panel, NULL);
     renderer_text = gtk_cell_renderer_text_new ();
     gtk_tree_view_column_pack_start (column, renderer_text, FALSE);
     gtk_tree_view_column_set_cell_data_func (column, renderer_text,
-            (GtkTreeCellDataFunc)my_sync_panel_treeview_render_text_cb,
+            (GtkTreeCellDataFunc)mz_sync_panel_treeview_render_text_cb,
             treeview, NULL);
     gtk_tree_view_append_column (GTK_TREE_VIEW (treeview), column);
     g_object_unref (model);
     g_object_connect (treeview,
                       "signal::row-activated",
-                      my_sync_panel_row_activated_cb, panel,
+                      mz_sync_panel_row_activated_cb, panel,
                       "signal::cursor-changed",
-                      my_sync_panel_cursor_or_row_changed_cb, panel,
+                      mz_sync_panel_cursor_or_row_changed_cb, panel,
                       "signal::columns-changed",
-                      my_sync_panel_cursor_or_row_changed_cb, panel,
+                      mz_sync_panel_cursor_or_row_changed_cb, panel,
                       "signal::button-release-event",
-                      my_sync_panel_button_release_event_cb, panel,
+                      mz_sync_panel_button_release_event_cb, panel,
                       "signal::popup-menu",
-                      my_sync_panel_popup_menu_cb, panel,
+                      mz_sync_panel_popup_menu_cb, panel,
                       NULL);
     gtk_widget_show (treeview);
 
@@ -737,13 +822,30 @@ my_sync_panel_init (MySyncPanel* panel)
 
     panel->pixbuf = gtk_widget_render_icon (treeview,
                      STOCK_NEWS_FEED, GTK_ICON_SIZE_MENU, NULL);
+    
+    infobar = gtk_info_bar_new();
+    panel->infobar = infobar;
+
+
+    status = gtk_label_new(_("Not Synced yet..."));
+	gtk_widget_show (status);
+	info_area = gtk_info_bar_get_content_area (GTK_INFO_BAR (infobar));
+	gtk_container_add (GTK_CONTAINER (info_area), status);
+    g_object_set_data (G_OBJECT (infobar), "status", status);
+
+	gtk_info_bar_set_message_type (GTK_INFO_BAR (infobar),
+		GTK_MESSAGE_OTHER);
+    gtk_widget_show(infobar);
+    //gtk_widget_set_no_show_all (infobar, TRUE);
+    gtk_box_pack_end (GTK_BOX (panel), infobar, FALSE, TRUE, 0);
+
 }
 
-GtkWidget*
-my_sync_panel_new (void)
+MzSyncPanel*
+mz_sync_panel_new (void)
 {
-    MySyncPanel* panel = g_object_new (MY_SYNC_TYPE_PANEL, NULL);
+    MzSyncPanel* panel = g_object_new (MZ_SYNC_TYPE_PANEL, NULL);
 
-    return GTK_WIDGET (panel);
+    return panel;
 }
 

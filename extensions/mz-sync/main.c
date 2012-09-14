@@ -289,7 +289,7 @@ gboolean get_data(const char* server, const char* user, const char* pass, const 
 	return TRUE;
 }
 
-gboolean register_and_create_storage(const char* server, const char* user, const char* pass, const char* key, GError** err){
+gboolean register_and_create_storage(const char* server, const char* user, const char* pass, const char* key, const char* client_name, GError** err){
 	SYNC_CTX ctx = { 0 };
 	
 	init_sync(&ctx);
@@ -299,7 +299,7 @@ gboolean register_and_create_storage(const char* server, const char* user, const
 			return FALSE;
 		}
 		g_clear_error(err);
-		if(!create_storage(&ctx, key, err)){
+		if(!create_storage(&ctx, key, client_name, err)){
 			return FALSE;
 		}
 	}else{
@@ -652,6 +652,8 @@ int main (int argc, char *argv[])
 	g_option_context_free(context);
 	
 	GError* err = NULL;
+	const char* client_name = g_strdup_printf("mz-sync standalone client %i.%i",
+		CLIENT_VERSION_MAJOR, CLIENT_VERSION_MINOR);
 	
 	if(get){
 		
@@ -667,7 +669,7 @@ int main (int argc, char *argv[])
 	}else if(put || reg){
 		
 		if(reg){
-			if(!register_and_create_storage(server, user, pass, key, &err)){
+			if(!register_and_create_storage(server, user, pass, key, client_name, &err)){
 				if( err != NULL){
 					fprintf (stderr, "Error registering: %s\n", err->message);
 				}else {
