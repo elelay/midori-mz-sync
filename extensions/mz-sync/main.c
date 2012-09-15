@@ -209,7 +209,7 @@ gboolean get_data(const char* server, const char* user, const char* pass, const 
 	}
 	g_clear_error(&tmp_error);
 	
-	JSObjectRef collections = list_collections(&ctx, &tmp_error);
+	JSObjectRef collections = list_collections(&ctx, 0, &tmp_error);
 	if(collections == NULL){
 		g_propagate_error (err, tmp_error);
 		return FALSE;
@@ -353,7 +353,7 @@ gboolean put_data(const char* server, const char* user, const char* pass, const 
 	}
 	g_free(contents);
 	
-	JSObjectRef server_collections = list_collections(&ctx, &tmp_error);
+	JSObjectRef server_collections = list_collections(&ctx, 0, &tmp_error);
 	if(server_collections == NULL){
 		g_propagate_error (err, tmp_error);
 		return FALSE;

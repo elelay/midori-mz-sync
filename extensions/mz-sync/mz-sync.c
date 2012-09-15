@@ -297,51 +297,51 @@ mz_sync_preferences_response_cb (GtkWidget*       dialog,
         
         if(!vetoed){
 
-			old_state = midori_extension_get_string (extension, "user");
+			old_state = mz_sync_extension_get_user (extension);
 			new_state = user;
 			if (strcmp(old_state,new_state))
 			{
 				state_changed = TRUE;
-				midori_extension_set_string (extension, "user", new_state);
+				mz_sync_extension_set_user (extension, new_state);
 			}
 			
-			old_state = midori_extension_get_string (extension, "pass");
+			old_state = mz_sync_extension_get_pass (extension);
 			new_state = pass;
 			if (strcmp(old_state,new_state))
 			{
 				state_changed = TRUE;
-				midori_extension_set_string (extension, "pass", new_state);
+				mz_sync_extension_set_pass (extension, new_state);
 			}
 	
-			old_state = midori_extension_get_string (extension, "server");
+			old_state = mz_sync_extension_get_server (extension);
 			new_state = server;
 			if (strcmp(old_state,new_state))
 			{
 				state_changed = TRUE;
-				midori_extension_set_string (extension, "server", new_state);
+				mz_sync_extension_set_server (extension, new_state);
 			}
 	
-			old_state = midori_extension_get_string (extension, "key");
+			old_state = mz_sync_extension_get_key (extension);
 			new_state = key;
 			if (strcmp(old_state,new_state))
 			{
 				state_changed = TRUE;
-				midori_extension_set_string (extension, "key", new_state);
+				mz_sync_extension_set_key (extension, new_state);
 			}
 	
-			old_state = midori_extension_get_string (extension, "sync_name");
+			old_state = mz_sync_extension_get_sync_name (extension);
 			new_state = sync_name;
 			if (strcmp(old_state,new_state))
 			{
 				state_changed = TRUE;
-				midori_extension_set_string (extension, "sync_name", new_state);
+				mz_sync_extension_set_sync_name (extension, new_state);
 			}
 	
-			old_interval = midori_extension_get_integer (extension, "interval");
+			old_interval = mz_sync_extension_get_interval (extension);
 			if (old_interval != interval)
 			{
 				state_changed = TRUE;
-				midori_extension_set_integer (extension, "interval", interval);
+				mz_sync_extension_set_interval (extension, interval);
 			}
 
 			if(state_changed){
@@ -364,7 +364,7 @@ mz_sync_preferences_cb (MidoriExtension* extension)
     GtkWidget* table;
     GtkWidget* info;
     GtkWidget* info_area;
-
+    
     dialog = gtk_dialog_new ();
 
     //gtk_window_set_modal (GTK_WINDOW (dialog), TRUE);
@@ -385,18 +385,19 @@ mz_sync_preferences_cb (MidoriExtension* extension)
 	gtk_container_add (GTK_CONTAINER (info_area), entry);
     g_object_set_data (G_OBJECT (info), "label", entry);
 	
-    
-    table = gtk_table_new(4, 2,FALSE);
+    table = gtk_table_new(17, 2,FALSE);
     gtk_table_set_row_spacings (GTK_TABLE (table), 10);
     gtk_table_set_col_spacings (GTK_TABLE (table), 3);
     gtk_box_pack_start (GTK_BOX (content_area), table, TRUE, TRUE, 5);
+
+    /* {{{ server, login info */
     
-    entry = gtk_label_new (_("My User (email address):"));
+    entry = gtk_label_new (_("User (email address):"));
     gtk_misc_set_alignment (GTK_MISC(entry), 1, 1);
     gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 0, 1, GTK_FILL, GTK_SHRINK, 0, 0);
     entry = gtk_entry_new ();
     gtk_entry_set_text (GTK_ENTRY (entry),
-        midori_extension_get_string (extension, "user"));
+        mz_sync_extension_get_user (extension));
     g_object_set_data (G_OBJECT (dialog), "user-entry", entry);
     gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 0, 1, GTK_FILL | GTK_EXPAND, GTK_SHRINK, 0, 0);
 
@@ -405,7 +406,7 @@ mz_sync_preferences_cb (MidoriExtension* extension)
     gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 1, 2, GTK_FILL, GTK_SHRINK, 0, 0);
     entry = gtk_entry_new ();
     gtk_entry_set_text (GTK_ENTRY (entry),
-        midori_extension_get_string (extension, "pass"));
+        mz_sync_extension_get_pass (extension));
     g_object_set_data (G_OBJECT (dialog), "pass-entry", entry);
     gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 1, 2, GTK_FILL | GTK_EXPAND, GTK_SHRINK, 0, 0);
 
@@ -414,7 +415,7 @@ mz_sync_preferences_cb (MidoriExtension* extension)
     gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 2, 3, GTK_FILL, GTK_SHRINK, 0, 0);
     entry = gtk_entry_new ();
     gtk_entry_set_text (GTK_ENTRY (entry),
-        midori_extension_get_string (extension, "server"));
+        mz_sync_extension_get_server (extension));
     g_object_set_data (G_OBJECT (dialog), "server-entry", entry);
     gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 2, 3, GTK_FILL | GTK_EXPAND, GTK_SHRINK, 0, 0);
 
@@ -423,7 +424,7 @@ mz_sync_preferences_cb (MidoriExtension* extension)
     gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 3, 4, GTK_FILL, GTK_SHRINK, 0, 0);
     entry = gtk_entry_new ();
     gtk_entry_set_text (GTK_ENTRY (entry),
-        midori_extension_get_string (extension, "key"));
+        mz_sync_extension_get_key (extension));
     gtk_entry_set_width_chars (GTK_ENTRY (entry), 32);
     g_object_set_data (G_OBJECT (dialog), "key-entry", entry);
     gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 3, 4, GTK_FILL | GTK_EXPAND, GTK_SHRINK, 0, 0);
@@ -433,20 +434,96 @@ mz_sync_preferences_cb (MidoriExtension* extension)
     gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 4, 5, GTK_FILL, GTK_SHRINK, 0, 0);
     entry = gtk_entry_new ();
     gtk_entry_set_text (GTK_ENTRY (entry),
-        midori_extension_get_string (extension, "sync_name"));
+        mz_sync_extension_get_sync_name (extension));
     gtk_entry_set_width_chars (GTK_ENTRY (entry), 32);
     g_object_set_data (G_OBJECT (dialog), "sync_name-entry", entry);
     gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 4, 5, GTK_FILL | GTK_EXPAND, GTK_SHRINK, 0, 0);
-
-    entry = gtk_label_new (_("Sync interval (min):"));
+    /* }}} */
+    
+    /* {{{ what to sync */
+    entry = gtk_label_new (_("What to sync:"));
     gtk_misc_set_alignment (GTK_MISC(entry), 1, 1);
     gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 5, 6, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_check_button_new_with_label (_("Sync Bookmarks"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_sync_bookmarks (extension) );
+    g_object_set_data (G_OBJECT (dialog), "sync_bookmarks-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 6, 7, GTK_FILL, GTK_SHRINK, 0, 0);
+    
+    /* }}} */
+
+    /* {{{ how to sync */
+    entry = gtk_label_new (_("How to sync:"));
+    gtk_misc_set_alignment (GTK_MISC(entry), 1, 1);
+    gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 7, 8, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_check_button_new_with_label (_("Use Sandbox mode (safer)"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_sandboxed (extension) );
+    g_object_set_data (G_OBJECT (dialog), "sandboxed-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 8, 9, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_label_new (_("When changes are made locally:"));
+    gtk_misc_set_alignment (GTK_MISC(entry), 1, 1);
+    gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 9, 10, GTK_FILL, GTK_SHRINK, 0, 0);
+    
+    entry = gtk_check_button_new_with_label (_("DELETE on Server"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_upload_delete (extension) );
+    g_object_set_data (G_OBJECT (dialog), "upload_delete-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 9, 10, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_check_button_new_with_label (_("ADD on Server"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_upload_add (extension) );
+    g_object_set_data (G_OBJECT (dialog), "upload_add-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 10, 11, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_check_button_new_with_label (_("MODIFY on Server"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_upload_modify (extension) );
+    g_object_set_data (G_OBJECT (dialog), "upload_modify-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 11, 12, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_label_new (_("When changes are detected on Server:"));
+    gtk_misc_set_alignment (GTK_MISC(entry), 1, 1);
+    gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 12, 13, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_check_button_new_with_label (_("DELETE in Client"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_download_delete (extension) );
+    g_object_set_data (G_OBJECT (dialog), "download_delete-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 12, 13, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_check_button_new_with_label (_("ADD in Client"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_download_add (extension) );
+    g_object_set_data (G_OBJECT (dialog), "download_add-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 13, 14, GTK_FILL, GTK_SHRINK, 0, 0);
+
+    entry = gtk_check_button_new_with_label (_("MODIFY in Client"));
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON(entry), 
+    	mz_sync_extension_get_download_modify (extension) );
+    g_object_set_data (G_OBJECT (dialog), "download_modify-entry", entry);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 14, 15, GTK_FILL, GTK_SHRINK, 0, 0);
+    /* }}} */
+    
+    /* {{{ when to sync */
+    entry = gtk_label_new (_("When to sync:"));
+    gtk_misc_set_alignment (GTK_MISC(entry), 1, 1);
+    gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 15, 16, GTK_FILL, GTK_SHRINK, 0, 0);
+    entry = gtk_label_new (_("Sync interval (min):"));
+    gtk_misc_set_alignment (GTK_MISC(entry), 1, 1);
+    gtk_table_attach (GTK_TABLE (table), entry, 0, 1, 16, 17, GTK_FILL, GTK_SHRINK, 0, 0);
     // max once a day...
     GtkAdjustment *spinner_adj =  (GtkAdjustment *) gtk_adjustment_new (
-    	midori_extension_get_integer (extension, "interval"), 0.0, 1440.0, 1.0, 1.0, 0);
+    	mz_sync_extension_get_interval (extension), 0.0, 1440.0, 1.0, 1.0, 0);
     entry = gtk_spin_button_new (spinner_adj, 1.0, 0);
     g_object_set_data (G_OBJECT (dialog), "interval-entry", entry);
-    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 5, 6, GTK_FILL | GTK_EXPAND, GTK_SHRINK, 0, 0);
+    gtk_table_attach (GTK_TABLE (table), entry, 1, 2, 16, 17, GTK_FILL | GTK_EXPAND, GTK_SHRINK, 0, 0);
+    
+    /* }}} */
     
     g_signal_connect (dialog,
             "response",
@@ -485,13 +562,8 @@ extension_init (void)
         "version", "0.1" MIDORI_VERSION_SUFFIX,
         "authors", "Eric Le Lay <elelay@macports.org>",
         NULL);
-
-    midori_extension_install_string (MIDORI_EXTENSION(extension), "user", "toto@titi.fr");
-    midori_extension_install_string (MIDORI_EXTENSION(extension), "pass", "azertyuiop");
-    midori_extension_install_string (MIDORI_EXTENSION(extension), "key", "h-r345c-69w4h-kqsfa-y8n6h-h5c8y");
-    midori_extension_install_string (MIDORI_EXTENSION(extension), "server", "http://localhost:5000");
-    midori_extension_install_string (MIDORI_EXTENSION(extension), "sync_name", "Midori MZ-SYNC extension");
-    midori_extension_install_integer (MIDORI_EXTENSION(extension), "interval", 5);
+    
+    mz_sync_extension_install_prefs(extension);
 
     g_signal_connect (extension, "activate",
         G_CALLBACK (mz_sync_activate_cb), NULL);

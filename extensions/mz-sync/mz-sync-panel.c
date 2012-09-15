@@ -73,7 +73,11 @@ mz_sync_panel_sync_started_cb                     (MzSyncExtension* instance, Mz
 	
 	status = g_object_get_data(G_OBJECT (panel->infobar), "status");
 	
-	gtk_label_set_text(GTK_LABEL(status), "Sync Started");
+	GString* sttime = g_string_sized_new(0);
+	time_t tt = time(NULL);
+	const char* d = ctime(&tt);
+	g_string_printf(sttime, "Sync Started at %s",d);
+	gtk_label_set_text(GTK_LABEL(status), g_string_free(sttime, FALSE));
 }
 
 void
@@ -89,15 +93,22 @@ mz_sync_panel_sync_ended_cb                     (MzSyncExtension* instance,
 	gtk_info_bar_set_message_type (GTK_INFO_BAR (panel->infobar),
 		success? GTK_MESSAGE_INFO : GTK_MESSAGE_ERROR);
 
+	GString* sttime = g_string_sized_new(0);
+	time_t tt = time(NULL);
+	const char* d = ctime(&tt);
 	if(success){
-		gtk_label_set_text(GTK_LABEL(label), "Sync Ended successfully");
+		g_string_printf(sttime, "Sync Success at %s(%i deleted, %i added, %i modified)"
+			,d,status->deleted,status->added,status->modified);
 	}else{
 		if(error != NULL){
-			gtk_label_set_text(GTK_LABEL(label), error->message);
+			g_string_printf(sttime, "Sync Error at %s(%i deleted, %i added, %i modified)\n%s"
+				,d,status->deleted,status->added,status->modified, error->message);
 		}else{
-			gtk_label_set_text(GTK_LABEL(label), "Sync error!!!");
+			g_string_printf(sttime, "Sync Error at %s\n(%i deleted, %i added, %i modified)"
+				,d,status->deleted,status->added,status->modified);
 		}
 	}
+	gtk_label_set_text(GTK_LABEL(label), g_string_free(sttime, FALSE));
 }
 
 
@@ -235,27 +246,42 @@ mz_sync_panel_add_item_cb (KatzeArray* parent,
 
 static void
 mz_sync_panel_remove_iter (GtkTreeModel* model,
+						KatzeArray*    parent,
                         KatzeItem*    removed_item)
 {
     guint i;
+    GtkTreeIter p_iter;
     GtkTreeIter iter;
 
-    i = 0;
-    while (gtk_tree_model_iter_nth_child (model, &iter, NULL, i))
-    {
-        KatzeItem* item;
+	GtkTreePath* path = gtk_tree_path_new ();
+	if(mz_sync_panel_get_tree_path(model, KATZE_ITEM(parent), path)){
+		g_assert(gtk_tree_model_get_iter(model, &p_iter, path));
+		
+		// TODO: extra safety, but costly: remove when I'm confident
+		g_assert(gtk_tree_store_iter_is_valid(GTK_TREE_STORE (model), &p_iter));
+		
+		i = 0;
+		while (gtk_tree_model_iter_nth_child (model, &iter, &p_iter, i))
+		{
+			KatzeItem* item;
+	
+			gtk_tree_model_get (model, &iter, 0, &item, -1);
+	
+			if (item == removed_item)
+			{
+				gtk_tree_store_remove (GTK_TREE_STORE (model), &iter);
+				g_object_unref (item);
+				break;
+			}
+			g_object_unref (item);
+			i++;
+		}
 
-        gtk_tree_model_get (model, &iter, 0, &item, -1);
+	}else{
+		//FIXME: error
+	}
+    gtk_tree_path_free(path);
 
-        if (item == removed_item)
-        {
-            gtk_tree_store_remove (GTK_TREE_STORE (model), &iter);
-            g_object_unref (item);
-            break;
-        }
-        g_object_unref (item);
-        i++;
-    }
 }
 
 static void
@@ -264,7 +290,6 @@ mz_sync_panel_remove_item_cb (KatzeArray* item,
                            MzSyncPanel*  panel)
 {
     GtkTreeModel* model;
-    KatzeItem* pitem;
 
     g_return_if_fail (MZ_SYNC_IS_PANEL (panel));
     g_return_if_fail (KATZE_IS_ARRAY (item));
@@ -272,11 +297,10 @@ mz_sync_panel_remove_item_cb (KatzeArray* item,
 
     if (KATZE_IS_ARRAY (child))
         mz_sync_panel_disconnect_feed (panel, KATZE_ARRAY (child));
-        pitem = child;
 
     model = gtk_tree_view_get_model (GTK_TREE_VIEW (panel->treeview));
-    mz_sync_panel_remove_iter (model, pitem);
-    g_object_unref (pitem);
+    mz_sync_panel_remove_iter (model, item, child);
+    g_object_unref (child);
 }
 
 static void
@@ -285,6 +309,8 @@ mz_sync_panel_move_item_cb (KatzeArray* feed,
                          gint        position,
                          MzSyncPanel*  panel)
 {
+	// TODO: unused, untested, probably broken because there was only 1 level in feedpanel
+	g_assert(FALSE);
     GtkTreeModel* model;
     GtkTreeIter iter;
     guint i;
@@ -354,17 +380,13 @@ mz_sync_panel_insert_item (MzSyncPanel*    panel,
         g_signal_connect_after (item, "move-item",
             G_CALLBACK (mz_sync_panel_move_item_cb), panel);
 
-        if (!parent)
-        {
-            g_signal_connect (item, "remove-item",
-                G_CALLBACK (mz_sync_panel_remove_item_cb), panel);
-        }
+		g_signal_connect (item, "remove-item",
+			G_CALLBACK (mz_sync_panel_remove_item_cb), panel);
 
         // add already present children
 		KATZE_ARRAY_FOREACH_ITEM_L (child, KATZE_ARRAY(item), list)
 		{
 			mz_sync_panel_add_item_cb(KATZE_ARRAY(item), child, panel);
-			g_object_unref (child);
 		}
 		g_free(list);
     }

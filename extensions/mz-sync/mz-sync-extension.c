@@ -14,13 +14,13 @@
 #include <time.h>
 
 #include "sync.h"
+#include "js.h"
 
 #define EXTENSION_NAME "Mozilla Sync Panel"
 
 #define MZ_SYNC_EXTENSION_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE ((obj), MZ_SYNC_TYPE_EXTENSION, MzSyncExtensionPrivate))
 
 typedef struct {
-    GPtrArray* bookmarks;
     SYNC_CTX ctx;
     KatzeArray* roots;
 
@@ -28,6 +28,8 @@ typedef struct {
     gboolean is_running;
     gboolean is_stopped;
 	
+    time_t last_sync_time;
+    
 } MzSyncExtensionPrivate;
 
 
@@ -59,16 +61,18 @@ static guint signals[LAST_SIGNAL];
 static void
 mz_sync_extension_init (MzSyncExtension* self)
 {
+	// private state
 	MzSyncExtensionPrivate* priv;
 	
     self->priv = priv = MZ_SYNC_EXTENSION_GET_PRIVATE(self);
     
-    priv->bookmarks = NULL;
     memset(&(priv->ctx),0,sizeof(SYNC_CTX));
     priv->roots = katze_array_new (KATZE_TYPE_ARRAY);
     priv->source_id = 0;
     priv->is_running = FALSE;
     priv->is_stopped = FALSE;
+    priv->last_sync_time = 0;
+
 }
 
 static void
@@ -80,7 +84,6 @@ mz_sync_extension_finalize (GObject* object)
     
     //TODO: unref any priv member here 
     g_object_unref (priv->roots);
-    g_ptr_array_unref(priv->bookmarks);
 }
 
 static void
@@ -151,7 +154,10 @@ show_error_dialog (GError* e)
 
 
 static void
-add_bookmarks_rec(KatzeArray* parent, SyncItem* itm, int depth);
+add_bookmarks_rec(KatzeArray* parent, SyncItem* itm);
+
+static void
+update_bookmarks_rec(KatzeArray* current, GPtrArray* newer, gboolean delete_missing, gboolean add_new, gboolean modify, MzSyncStatus* status);
 
 gboolean
 mz_sync_extension_sync (MzSyncExtension* extension)
@@ -161,9 +167,8 @@ mz_sync_extension_sync (MzSyncExtension* extension)
 	
 	SYNC_CTX* ctx;
 	MzSyncStatus status = {0};
+	time_t sync_start_time;
 
-	printf("update_mz_syncs(%p)\n", extension);
-	
     if (!priv->is_running && !priv->is_stopped)
     {
 		priv->is_running = TRUE;
@@ -174,29 +179,62 @@ mz_sync_extension_sync (MzSyncExtension* extension)
 			g_set_error(&(status.error), MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED, "not set correctly...");
 			status.success = FALSE;
 		}else{
-		
-			katze_array_clear(priv->roots);
 			
-			GPtrArray* bookmarks = get_bookmarks(ctx, &(status.error));
-			if(bookmarks == NULL){
-				status.success = FALSE;
-				if( status.error != NULL){
-					fprintf (stderr, "Error: %s\n", status.error->message);
-					show_error_dialog(status.error);
+			sync_start_time = time(NULL);
+			// 1) get the collections to see if anything has changed
+			// 2) get the bookmarks
+			// 3) figure out what has changed and update
+			
+			
+			// 1) get the collections to see if anything has changed
+
+			JSObjectRef collections = list_collections(ctx, priv->last_sync_time, &(status.error));
+			if(collections == NULL){
+				if(g_error_matches(status.error, MY_SYNC_ERROR, MY_SYNC_ERROR_NOT_MODIFIED)){
+					g_clear_error(&(status.error));
+					status.success = TRUE;
 				}else{
-					fprintf (stderr, "no bookmarks !\n");
+					status.success = FALSE;
 				}
-			}else{
-				int i;
-				for(i=0;i<bookmarks->len;i++){
-					add_bookmarks_rec(priv->roots, g_ptr_array_index(bookmarks, i), 0);
-				}  
-				
-				g_ptr_array_unref(bookmarks);
-				status.success = TRUE;
+			} else {
+			
+				double bookmarks_ts = get_double_prop(ctx->ctx, collections, "bookmarks", &(status.error));
+				if(status.error != NULL){
+					status.success = FALSE;
+				}else{
+					if(bookmarks_ts < priv->last_sync_time) {
+						status.success = TRUE;
+					} else {
+						
+						// 2) get the bookmarks
+						
+						GPtrArray* bookmarks = get_bookmarks(ctx, &(status.error));
+						if(bookmarks == NULL){
+							status.success = FALSE;
+							if( status.error != NULL){
+								fprintf (stderr, "Error: %s\n", status.error->message);
+								show_error_dialog(status.error);
+							}else{
+								fprintf (stderr, "no bookmarks !\n");
+							}
+						}else{
+							gboolean delete_missing = mz_sync_extension_get_download_delete(extension);
+							gboolean add = mz_sync_extension_get_download_add(extension);
+							gboolean modify = mz_sync_extension_get_download_modify(extension);
+							
+							update_bookmarks_rec(priv->roots, bookmarks, delete_missing, add, modify, &status);
+							
+							g_ptr_array_unref(bookmarks);
+							status.success = TRUE;
+						}
+					}
+				}
 			}
-		
+			if(status.success){
+				priv->last_sync_time = sync_start_time;
+			}
 		}
+		
 		g_signal_emit_by_name(extension, "sync-ended", &status);
 		g_clear_error(&(status.error));
     }
@@ -205,13 +243,10 @@ mz_sync_extension_sync (MzSyncExtension* extension)
 }
 
 static void
-add_bookmarks_rec(KatzeArray* parent, SyncItem* itm, int depth)
+add_bookmarks_rec(KatzeArray* parent, SyncItem* itm)
 {
 	int i;
 	
-	for(i=0;i<depth; i++){
-		printf(" ");
-	}
 	if(itm->type == SYNC_ITEM_FOLDER){
 		SYNC_FOLDER* actual = itm->actual;
 		if(actual == NULL){
@@ -228,8 +263,10 @@ add_bookmarks_rec(KatzeArray* parent, SyncItem* itm, int depth)
             katze_array_add_item (parent, feed);
 
 			//printf("%s '%s' %f\n", itm->id, actual->title, itm->modified);
+			
+			// new, so insertAt == -1
 			for(i = 0 ; i < actual->children->len; i++){
-				add_bookmarks_rec(feed, g_ptr_array_index(actual->children, i), depth+2);
+				add_bookmarks_rec(feed, g_ptr_array_index(actual->children, i));
 			}
 		}
 	}else if(itm->type == SYNC_ITEM_BOOKMARK){
@@ -237,7 +274,7 @@ add_bookmarks_rec(KatzeArray* parent, SyncItem* itm, int depth)
 		if(actual == NULL){
 			g_error("invalid bookmark: '%s'\n", itm->id);
 		}else{
-			//printf("%s %s %s %f\n", itm->id, actual->title, actual->bmkURI, itm->modified);
+			printf("%s %s %s %f\n", itm->id, actual->title, actual->bmkURI, itm->modified);
 		}
 		// ignore place:* bookmarks as they are not real bookmarks but ff specific
 		if(strncmp(actual->bmkURI, "place:", 6)){
@@ -249,6 +286,7 @@ add_bookmarks_rec(KatzeArray* parent, SyncItem* itm, int depth)
             katze_item_set_token (KATZE_ITEM (child), itm->id);
             katze_item_set_name (KATZE_ITEM (child), itm->id);
             katze_item_set_text (KATZE_ITEM (child), actual->title);
+
             katze_array_add_item (parent, child);
         }
 
@@ -258,6 +296,172 @@ add_bookmarks_rec(KatzeArray* parent, SyncItem* itm, int depth)
 		g_error("new type of bookmark !");
 	}
 }
+
+static void
+update_bookmarks_rec(KatzeArray* current, GPtrArray* newer,
+	gboolean delete_missing, gboolean add_new, gboolean modify,
+	MzSyncStatus* status)
+{
+	GList* l;
+	KatzeItem* child;
+	SyncItem* itm;
+	int deleted_cnt = 0;
+	int current_len = katze_array_get_length(current);
+	
+	KATZE_ARRAY_FOREACH_ITEM_L (child, current, l)
+	{
+		//printf("considering %s %s\n",child->token, child->text);
+		itm = get_sync_item_by_id(newer, child->token);
+		if(itm == NULL){
+			deleted_cnt++;
+			
+			if(delete_missing){
+				printf("deleting %s\t%s\n", child->token, child->uri);
+				katze_array_remove_item(current, child);
+				status->deleted++;
+			}else{
+				printf("not deleting %s\t%s\n", child->token, child->uri);
+			}
+		}else{
+			
+			if(itm->type == SYNC_ITEM_FOLDER){
+				SYNC_FOLDER* actual = itm->actual;
+				if(actual == NULL){
+					g_error("invalid folder: '%s'\n", itm->id);
+				}else{
+					if(!KATZE_IS_ARRAY(child)){
+						// it was a bookmark and is now a folder
+						if(delete_missing){
+							printf("deleting because it's now an array %s\t%s\n", child->token, child->uri);
+							katze_array_remove_item(current, child);
+							status->deleted++;
+						}else{
+							printf("not deleting even if it's now an array %s\t%s\n", child->token, child->uri);
+							GError* tmp_error = NULL;
+							// this is an ugly case that I try to handle the best way
+							// depending on the choices of the user
+							// so I modify the local id, so it appears as deleted even if it
+							// has not been deleted
+							// FIXME: the new id could be non unique...
+							child->name = child->token = generate_id(&tmp_error);
+						}
+					}else{
+						gboolean modified = FALSE;
+						if(strcmp(child->name, itm->id)){
+							if(modify){
+								printf("updating name of %s: '%s' to '%s'\n", child->token, child->name, itm->id);
+								katze_item_set_name (child, itm->id);
+								modified = TRUE;
+							}else{
+								printf("not updating name of %s: '%s' to '%s'\n", child->token, child->name, itm->id);
+							}
+						}
+						
+						if(strcmp(child->text, actual->title)){
+							if(modify){
+								printf("updating text of %s: '%s' to '%s'\n", child->token, child->text, actual->title);
+								katze_item_set_text (child, actual->title);
+								modified = TRUE;
+							}else{
+								printf("not updating text of %s: '%s' to '%s'\n", child->token, child->text, actual->title);
+							}
+						}
+						
+						if(modified){
+							status->modified++;
+						}
+						
+						update_bookmarks_rec(KATZE_ARRAY(child), actual->children, delete_missing, add_new, modify, status);
+					}
+				}
+			}else if(itm->type == SYNC_ITEM_BOOKMARK){
+				SYNC_BOOKMARK* actual = itm->actual;
+				gboolean modified = FALSE;
+				
+				if(actual == NULL){
+					g_error("invalid bookmark: '%s'\n", itm->id);
+				}
+				
+				if(strcmp(child->uri, actual->bmkURI)){
+					if(modify){
+						printf("updating uri of %s: '%s' to '%s'\n", child->token, child->uri, actual->bmkURI);
+						katze_item_set_uri (child, actual->bmkURI);
+						modified = TRUE;
+					}else{
+						printf("not updating uri of %s: '%s' to '%s'\n", child->token, child->uri, actual->bmkURI);
+					}
+				}
+				
+				if(strcmp(child->name, itm->id)){
+					if(modify){
+						printf("updating name of %s: '%s' to '%s'\n", child->token, child->name, itm->id);
+						katze_item_set_name (child, itm->id);
+						modified = TRUE;
+					}else{
+						printf("not updating name of %s: '%s' to '%s'\n", child->token, child->name, itm->id);
+					}
+				}							
+				
+				if(strcmp(child->text, actual->title)){
+					if(modify){
+						printf("updating text of %s: '%s' to '%s'\n", child->token, child->text, actual->title);
+						katze_item_set_text (child, actual->title);
+						modified = TRUE;
+					}else{
+						printf("not updating text of %s: '%s' to '%s'\n", child->token, child->text, actual->title);
+					}
+				}
+				
+				if(modified){
+					status->modified++;
+				}
+				
+			}else if(itm->type == SYNC_ITEM_SEPARATOR){
+				if(delete_missing){
+					printf("deleting because it's now a separator %s\t%s\n", child->token, child->uri);
+					katze_array_remove_item(current, child);
+					status->deleted++;
+				}else{
+					printf("not deleting even if it's now a separator %s\t%s\n", child->token, child->uri);
+				}
+			}else{
+				g_error("new type of bookmark !");
+			}
+
+			
+		}
+	}
+	g_free(l);
+	
+	
+	// now, the added ones ;-)
+	g_assert(newer->len + deleted_cnt >= current_len);
+	
+	if(newer->len + deleted_cnt != current_len){
+		int i;
+		for(i=0; i < newer->len; i++){
+			itm = g_ptr_array_index(newer, i);
+			// ignore separators,
+			// ignore place:* bookmarks as they are not real bookmarks but ff specific
+			if(itm->type == SYNC_ITEM_FOLDER
+				|| (itm->type == SYNC_ITEM_BOOKMARK
+					&& (strncmp(((SYNC_BOOKMARK*)itm->actual)->bmkURI, "place:", 6) != 0)))
+			{
+				child  = katze_array_find_token(current, itm->id);
+				if(child == NULL){
+					if(add_new){
+						printf("adding %s (%u)\n", itm->id, itm->type);
+						add_bookmarks_rec(current, itm);
+						status->added++;
+					}else{
+						printf("not adding %s\n", itm->id);
+					}
+				}
+			}
+		}
+	}
+}
+
 
 void
 mz_sync_deactivate_cb (MzSyncExtension* extension, gpointer ignored)
@@ -310,12 +514,12 @@ mz_sync_extension_reset (MzSyncExtension* extension)
     free_sync(ctx);
     init_sync(ctx);
     
-    user = midori_extension_get_string (MIDORI_EXTENSION(extension), "user");
-    pass = midori_extension_get_string (MIDORI_EXTENSION(extension), "pass");
-    key = midori_extension_get_string (MIDORI_EXTENSION(extension), "key");
-    server = midori_extension_get_string (MIDORI_EXTENSION(extension), "server");
-    sync_name = midori_extension_get_string (MIDORI_EXTENSION(extension), "sync_name");
-    interval = midori_extension_get_integer (MIDORI_EXTENSION(extension), "interval");
+    user = mz_sync_extension_get_user (extension);
+    pass = mz_sync_extension_get_pass (extension);
+    key = mz_sync_extension_get_key (extension);
+    server = mz_sync_extension_get_server (extension);
+    sync_name = mz_sync_extension_get_sync_name (extension);
+    interval = mz_sync_extension_get_interval (extension);
     
     g_assert (user && pass && key && server);
     
@@ -363,7 +567,7 @@ mz_sync_extension_reset (MzSyncExtension* extension)
 					g_clear_error(&err);
 					
 					for(i=0;i<bookmarks->len;i++){
-						add_bookmarks_rec(roots, g_ptr_array_index(bookmarks, i), 0);
+						add_bookmarks_rec(roots, g_ptr_array_index(bookmarks, i));
 					}  
 					
 					g_ptr_array_unref(bookmarks);
@@ -380,4 +584,23 @@ mz_sync_extension_reset (MzSyncExtension* extension)
 		priv->source_id = g_timeout_add_seconds (interval * 60,
 			(GSourceFunc) mz_sync_extension_sync, extension);
 	}
+}
+
+void
+mz_sync_extension_install_prefs(MzSyncExtension * self) {
+	// set preferences
+    midori_extension_install_string (MIDORI_EXTENSION(self), "user", "toto@titi.fr");
+    midori_extension_install_string (MIDORI_EXTENSION(self), "pass", "azertyuiop");
+    midori_extension_install_string (MIDORI_EXTENSION(self), "key", "h-r345c-69w4h-kqsfa-y8n6h-h5c8y");
+    midori_extension_install_string (MIDORI_EXTENSION(self), "server", "http://localhost:5000");
+    midori_extension_install_string (MIDORI_EXTENSION(self), "sync_name", "Midori MZ-SYNC extension");
+    midori_extension_install_integer (MIDORI_EXTENSION(self), "interval", 5);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "sandboxed", TRUE);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "sync_bookmarks", TRUE);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "upload_delete", TRUE);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "upload_add", TRUE);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "upload_modify", TRUE);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "download_delete", TRUE);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "download_add", TRUE);
+    midori_extension_install_boolean (MIDORI_EXTENSION(self), "download_modify", TRUE);
 }

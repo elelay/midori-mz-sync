@@ -43,7 +43,7 @@ gboolean refresh_bulk_keys(SYNC_CTX* ctx, GError** err);
 guchar** decrypt_bulk_keys(SYNC_CTX* ctx, const guchar* master_key, const guchar* master_hmac, WBO* keys, GError** err);
 const char* encrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac, const WBO* w, GError** err);
 char* decrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hmac, const WBO* w, GError** err);
-JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, GError** err);
+JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, time_t if_modified_since, GError** err);
 GPtrArray* get_collection_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, GError** err);
 WBO* get_record_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, const char* id, GError** err);
 gboolean create_collection_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, const char* collection, GError** err);
@@ -551,18 +551,19 @@ gboolean register_user(SYNC_CTX* s_ctx, const char* server_url, const char* emai
 	return res;
 }
 
-JSObjectRef list_collections(SYNC_CTX* s_ctx, GError** err){
-	return list_collections_int(s_ctx, s_ctx->enc_user, s_ctx->end_point, err);
+JSObjectRef list_collections(SYNC_CTX* s_ctx, time_t if_modified_since, GError** err){
+	return list_collections_int(s_ctx, s_ctx->enc_user, s_ctx->end_point, if_modified_since, err);
 }
 
 
-JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, GError** err)
+JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const char* end_point, time_t if_modified_since, GError** err)
 {
 	GString* url;
 	const char *name;
 	SoupMessage *msg;
 	JSObjectRef res;
 	GError* tmp_error = NULL;
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(end_point);
 	g_string_append_printf(url, "1.1/%s/info/collections",username);
@@ -571,6 +572,15 @@ JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const ch
 	msg = soup_message_new (SOUP_METHOD_GET, url->str);
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+	
+	if(if_modified_since > 0){
+		headers = msg->request_headers;
+		SoupDate* modsince = soup_date_new_from_time_t (if_modified_since);
+		char* h = soup_date_to_string (modsince, SOUP_DATE_HTTP);
+		soup_message_headers_replace(headers, "If-Modified-Since", h);
+		soup_date_free(modsince);
+		g_free(h);
+	}
 	
 	soup_session_send_message (s_ctx->session, msg);
 	
@@ -585,6 +595,13 @@ JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const ch
 				"error listing collections: can't parse server response as JSON (%s)", tmp_error->message);
 			g_clear_error(&tmp_error);
 		}
+	} else if(msg->status_code == SOUP_STATUS_NOT_MODIFIED){
+
+		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_NOT_MODIFIED,
+			"collections have not been modified since (%lu)", if_modified_since);
+
+		res = NULL;
+		
 	} else if(msg->status_code == SOUP_STATUS_NOT_FOUND){
 		
 		g_set_error(err, MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED,
@@ -1143,6 +1160,18 @@ WBO* get_wbo_by_id(GPtrArray* coll, const char* id){
 	return NULL;
 }
 
+SyncItem* get_sync_item_by_id(GPtrArray* coll, const char* id){
+	int i;
+	SyncItem* w;
+	for(i=0;i < coll->len; i++){
+		w = g_ptr_array_index(coll, i);
+		if(g_strcmp0(w->id, id) == 0){
+			return w;
+		}
+	}
+	return NULL;
+}
+
 char* decrypt_wbo(SYNC_CTX* s_ctx, const char* collection, WBO* w, GError** err){
 	//todo: non default keys
 	return decrypt_wbo_int(s_ctx, s_ctx->bulk_key, s_ctx->bulk_hmac, w, err);
@@ -1356,7 +1385,7 @@ const char* encrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hm
 	
 	g_assert(1 == EVP_EncryptInit_ex(&cctx, EVP_aes_256_cbc(), NULL, key, iv));
 	
-	guchar* ciphertext = malloc((payload_len+EVP_CIPHER_CTX_block_size(&cctx))*sizeof(unsigned char)); // TODO: what's the encrypted size ?
+	guchar* ciphertext = malloc((payload_len+EVP_CIPHER_CTX_block_size(&cctx)-1));
 	int ciphertext_len;
 	int ciphertext_rem;
 	
@@ -2191,12 +2220,12 @@ SyncItem* get_bookmark_rec(SYNC_CTX* s_ctx, GPtrArray* bookmarks_wbo, WBO* itm, 
 	
 }
 
+// the items on the server are a mess: these 3 seem to be the only important ones
 #define ROOTS_LEN	3
 static const char* roots[ROOTS_LEN] = {"menu","toolbar","unfiled"};
 
 GPtrArray* get_bookmarks(SYNC_CTX* s_ctx, GError** err){
 	GError* tmp_error = NULL;
-	// the items on the server are a mess: these 3 seem to be the only important ones
 	
 	if(!verify_storage(s_ctx, &tmp_error)){
 		g_propagate_prefixed_error(err, tmp_error,

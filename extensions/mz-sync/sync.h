@@ -26,6 +26,7 @@ typedef enum {
 	MY_SYNC_ERROR_WRONG_PASSWORD,	/* unauthorized */
 	MY_SYNC_ERROR_BACKOFF,		/* todo: server requested that we stop interacting with it */
 	MY_SYNC_ERROR_CAPTCHA,
+	MY_SYNC_ERROR_NOT_MODIFIED, /* not technically an error, but an extra-ordinary situation... */
 	MY_SYNC_ERROR_FAILED
 } MySyncError;
 
@@ -99,7 +100,7 @@ gboolean set_master_key(SYNC_CTX* s_ctx, const char* master_key, GError** err);
 unsigned char** regen_key_hmac(const char* username, gsize username_len, const char* user_key, GError** err);
 gboolean refresh_bulk_keys_from_wbo(SYNC_CTX* ctx, WBO* cryptokeys, GError** err);
 
-JSObjectRef list_collections(SYNC_CTX* s_ctx, GError** err);
+JSObjectRef list_collections(SYNC_CTX* s_ctx, time_t if_modified_since, GError** err);
 
 GPtrArray* get_collection(SYNC_CTX* s_ctx, const char* collection, GError** err);
 
@@ -122,6 +123,9 @@ gboolean create_storage(SYNC_CTX* s_ctx, const char* master_key, const char* cli
 
 // utilities
 WBO* get_wbo_by_id(GPtrArray* coll, const char* id);
+SyncItem* get_sync_item_by_id(GPtrArray* coll, const char* id);
+/* returns a 12 chars base64 random string */
+char* generate_id(GError** err);
 
 #endif        //  #ifndef SYNC_H
 

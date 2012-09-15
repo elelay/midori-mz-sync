@@ -1,4 +1,4 @@
-/*
+/* :noTabs=true:mode=c:tabSize=4:indentSize=4:folding=explicit:
  Copyright (C) 2012 Eric Le Lay <elelay@macports.org>
 
  This library is free software; you can redistribute it and/or
@@ -15,6 +15,8 @@
 #include <midori/midori.h>
 
 G_BEGIN_DECLS
+
+/* {{{ gobject stuff */
 
 #define MZ_SYNC_TYPE_EXTENSION \
     (mz_sync_extension_get_type ())
@@ -38,10 +40,14 @@ mz_sync_extension_get_type                      (void);
 MzSyncExtension*
 mz_sync_extension_new                           (void);
 
-G_END_DECLS
+/* }}} */
 
+/* {{{ methods */
 typedef struct {
 	gboolean success;
+	int deleted;
+	int added;
+	int modified;
 	GError* error;
 } MzSyncStatus;
 
@@ -56,5 +62,98 @@ mz_sync_extension_reset (MzSyncExtension* extension);
 
 KatzeArray*
 mz_sync_extension_get_roots (MzSyncExtension* extension);
+/* }}} */
+
+/* {{{ preferences */
+void
+mz_sync_extension_install_prefs(MzSyncExtension * self);
+    
+#define mz_sync_extension_set_user(extension, user) \
+    midori_extension_set_string (MIDORI_EXTENSION (extension), "user", \
+                       user)
+#define mz_sync_extension_get_user(extension) \
+    midori_extension_get_string (MIDORI_EXTENSION (extension), "user")
+
+#define mz_sync_extension_set_pass(extension, pass) \
+    midori_extension_set_string (MIDORI_EXTENSION (extension), "pass", \
+                       pass)
+#define mz_sync_extension_get_pass(extension) \
+    midori_extension_get_string (MIDORI_EXTENSION (extension), "pass")
+
+#define mz_sync_extension_set_server(extension, server) \
+    midori_extension_set_string (MIDORI_EXTENSION (extension), "server", \
+                       server)
+#define mz_sync_extension_get_server(extension) \
+    midori_extension_get_string (MIDORI_EXTENSION (extension), "server")
+
+#define mz_sync_extension_set_key(extension, key) \
+    midori_extension_set_string (MIDORI_EXTENSION (extension), "key", \
+                       key)
+#define mz_sync_extension_get_key(extension) \
+    midori_extension_get_string (MIDORI_EXTENSION (extension), "key")
+
+#define mz_sync_extension_set_sync_name(extension, sync_name) \
+    midori_extension_set_string (MIDORI_EXTENSION (extension), "sync_name", \
+                       sync_name)
+#define mz_sync_extension_get_sync_name(extension) \
+    midori_extension_get_string (MIDORI_EXTENSION (extension), "sync_name")
+
+#define mz_sync_extension_set_interval(extension, interval) \
+    midori_extension_set_integer (MIDORI_EXTENSION (extension), "interval", \
+                       interval)
+#define mz_sync_extension_get_interval(extension) \
+    midori_extension_get_integer (MIDORI_EXTENSION (extension), "interval")
+
+#define mz_sync_extension_set_sandboxed(extension, sandboxed) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "sandboxed", \
+                       sandboxed)
+#define mz_sync_extension_get_sandboxed(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "sandboxed")
+
+#define mz_sync_extension_set_sync_bookmarks(extension, sync_bookmarks) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "sync_bookmarks", \
+                       sync_bookmarks)
+#define mz_sync_extension_get_sync_bookmarks(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "sync_bookmarks")
+
+#define mz_sync_extension_set_upload_delete(extension, upload_delete) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "upload_delete", \
+                       upload_delete)
+#define mz_sync_extension_get_upload_delete(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "upload_delete")
+
+#define mz_sync_extension_set_upload_add(extension, upload_add) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "upload_add", \
+                       upload_add)
+#define mz_sync_extension_get_upload_add(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "upload_add")
+
+#define mz_sync_extension_set_upload_modify(extension, upload_modify) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "upload_modify", \
+                       upload_modify)
+#define mz_sync_extension_get_upload_modify(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "upload_modify")
+
+#define mz_sync_extension_set_download_delete(extension, download_delete) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "download_delete", \
+                       download_delete)
+#define mz_sync_extension_get_download_delete(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "download_delete")
+
+#define mz_sync_extension_set_download_add(extension, download_add) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "download_add", \
+                       download_add)
+#define mz_sync_extension_get_download_add(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "download_add")
+
+#define mz_sync_extension_set_download_modify(extension, download_modify) \
+    midori_extension_set_boolean (MIDORI_EXTENSION (extension), "download_modify", \
+                       download_modify)
+#define mz_sync_extension_get_download_modify(extension) \
+    midori_extension_get_boolean (MIDORI_EXTENSION (extension), "download_modify")
+
+/* }}} */
+G_END_DECLS
 
 #endif /* __MZ_SYNC_EXTENSION_H__ */
+
