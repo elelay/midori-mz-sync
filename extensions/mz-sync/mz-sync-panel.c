@@ -100,12 +100,14 @@ mz_sync_panel_sync_ended_cb                     (MzSyncExtension* instance,
 		g_string_printf(sttime, "Sync Success at %s(%i deleted, %i added, %i modified)"
 			,d,status->deleted,status->added,status->modified);
 	}else{
+		time_t last = mz_sync_extension_get_last_sync(instance);
+		const char* lastd = last == 0 ? "(never)" : ctime(&last);
 		if(error != NULL){
-			g_string_printf(sttime, "Sync Error at %s(%i deleted, %i added, %i modified)\n%s"
-				,d,status->deleted,status->added,status->modified, error->message);
+			g_string_printf(sttime, "Sync Error at %s(%i deleted, %i added, %i modified)\n%s\nlast Success: %s"
+				,d,status->deleted,status->added,status->modified, error->message, lastd);
 		}else{
-			g_string_printf(sttime, "Sync Error at %s\n(%i deleted, %i added, %i modified)"
-				,d,status->deleted,status->added,status->modified);
+			g_string_printf(sttime, "Sync Error at %s\n(%i deleted, %i added, %i modified)\n\nlast Success:%s"
+				,d,status->deleted,status->added,status->modified, lastd);
 		}
 	}
 	gtk_label_set_text(GTK_LABEL(label), g_string_free(sttime, FALSE));

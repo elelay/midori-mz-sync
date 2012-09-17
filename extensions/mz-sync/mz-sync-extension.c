@@ -29,6 +29,7 @@ typedef struct {
     gboolean is_stopped;
 	
     time_t last_sync_time;
+    gboolean last_status_was_error;
     
 } MzSyncExtensionPrivate;
 
@@ -72,6 +73,7 @@ mz_sync_extension_init (MzSyncExtension* self)
     priv->is_running = FALSE;
     priv->is_stopped = FALSE;
     priv->last_sync_time = 0;
+    priv->last_status_was_error = TRUE;
 
 }
 
@@ -125,6 +127,22 @@ mz_sync_extension_get_roots (MzSyncExtension* extension)
     g_return_val_if_fail (MZ_SYNC_IS_EXTENSION (extension), NULL);
 	
     return extension->priv->roots;
+}
+
+time_t
+mz_sync_extension_get_last_sync (MzSyncExtension* extension)
+{
+    g_return_val_if_fail (MZ_SYNC_IS_EXTENSION (extension), 0);
+	
+    return extension->priv->last_sync_time;
+}
+
+gboolean
+mz_sync_extension_get_last_status_was_error (MzSyncExtension* extension)
+{
+    g_return_val_if_fail (MZ_SYNC_IS_EXTENSION (extension), TRUE);
+	
+    return extension->priv->last_status_was_error;
 }
 
 /* implementation */
@@ -230,6 +248,7 @@ mz_sync_extension_sync (MzSyncExtension* extension)
 					}
 				}
 			}
+			priv->last_status_was_error = !status.success;
 			if(status.success){
 				priv->last_sync_time = sync_start_time;
 			}
@@ -507,6 +526,7 @@ mz_sync_extension_reset (MzSyncExtension* extension)
     MzSyncExtensionPrivate* priv;
     int interval;
     GError* err;
+	time_t sync_start_time;
     
     priv = extension->priv;
     
@@ -565,7 +585,8 @@ mz_sync_extension_reset (MzSyncExtension* extension)
 				
 				g_clear_error(&err);
 				
-				// TODO: load cached copy for fast display...
+                sync_start_time = time(NULL);
+                // TODO: load cached copy for fast display...
 				GPtrArray* bookmarks = get_bookmarks(ctx, &err);
 				if(bookmarks == NULL){
 					if( err != NULL){
@@ -574,14 +595,18 @@ mz_sync_extension_reset (MzSyncExtension* extension)
 					}else{
 						fprintf (stderr, "no bookmarks !\n");
 					}
+                    priv->last_status_was_error = TRUE;
 				} else {
 					g_clear_error(&err);
 					
 					for(i=0;i<bookmarks->len;i++){
 						add_bookmarks_rec(roots, g_ptr_array_index(bookmarks, i));
-					}  
+					}
 					
 					g_ptr_array_unref(bookmarks);
+
+                    priv->last_status_was_error = FALSE;
+                    priv->last_sync_time = sync_start_time;
 				}
 			}
 		}

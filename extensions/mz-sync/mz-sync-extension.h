@@ -64,6 +64,12 @@ mz_sync_extension_reset (MzSyncExtension* extension);
 
 KatzeArray*
 mz_sync_extension_get_roots (MzSyncExtension* extension);
+
+time_t
+mz_sync_extension_get_last_sync (MzSyncExtension* extension);
+
+gboolean
+mz_sync_extension_get_last_status_was_error (MzSyncExtension* extension);
 /* }}} */
 
 /* {{{ preferences */

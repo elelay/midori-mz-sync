@@ -370,6 +370,7 @@ mz_sync_preferences_response_cb (GtkWidget*       dialog,
 							vetoed = TRUE;
 						}else{
 							gtk_label_set_text(GTK_LABEL(label), "Seems all good :-)");
+							vetoed = FALSE;
 						}
 					}
 				}
@@ -428,7 +429,9 @@ mz_sync_preferences_response_cb (GtkWidget*       dialog,
 				mz_sync_extension_set_interval (extension, interval);
 			}
 
-			if(state_changed){
+			if(state_changed
+			    || mz_sync_extension_get_last_status_was_error(MZ_SYNC_EXTENSION(extension)) )
+			{
 				mz_sync_extension_reset (MZ_SYNC_EXTENSION(extension));
 			}
         }
