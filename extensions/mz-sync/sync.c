@@ -54,7 +54,6 @@ void sync_folder_free(SYNC_FOLDER* f);
 void sync_bookmark_free(SYNC_BOOKMARK* b);
 gboolean create_metaglobal(SYNC_CTX* s_ctx, GError** err);
 gboolean create_cryptokeys(SYNC_CTX* s_ctx, const char* master_key, GError** err);
-gboolean create_client(SYNC_CTX* s_ctx, const char* name, const char* type, GError** err);
 
 void sync_item_free(SyncItem* itm){
 	g_free((gpointer)itm->id);
@@ -291,6 +290,7 @@ char* get_sync_node(SYNC_CTX* s_ctx, const char* username, const char* server_ur
 	SoupMessage *msg;
 	char *res;
 	const char* method;
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(server_url);
 	g_string_append_printf(url, "/user/1.0/%s/node/weave",username);
@@ -301,6 +301,9 @@ char* get_sync_node(SYNC_CTX* s_ctx, const char* username, const char* server_ur
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	soup_session_send_message (s_ctx->session, msg);
 	
 	name = soup_message_get_uri (msg)->path;
@@ -335,6 +338,7 @@ gboolean user_exists(SYNC_CTX* s_ctx, const char* username, const char* server_u
 	gboolean res;
 	const char* method;
 	gchar* canned_response;
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(server_url);
 	g_string_append_printf(url, "/user/1.0/%s",username);
@@ -345,6 +349,9 @@ gboolean user_exists(SYNC_CTX* s_ctx, const char* username, const char* server_u
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	soup_session_send_message (s_ctx->session, msg);
 	
 	if(SOUP_STATUS_IS_SUCCESSFUL(msg->status_code)) {
@@ -413,6 +420,7 @@ gboolean register_user(SYNC_CTX* s_ctx, const char* server_url, const char* emai
 	char* captcha_response;
 	gboolean res;
 	GError* tmp_error;
+	SoupMessageHeaders* headers;
 	
 	tmp_error = NULL;
 
@@ -433,6 +441,9 @@ gboolean register_user(SYNC_CTX* s_ctx, const char* server_url, const char* emai
 		
 		soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 		
+		headers = msg->request_headers;
+		soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 		soup_session_send_message (s_ctx->session, msg);
 		
 		name = soup_message_get_uri (msg)->path;
@@ -483,6 +494,9 @@ gboolean register_user(SYNC_CTX* s_ctx, const char* server_url, const char* emai
 		
 		soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 		
+		headers = msg->request_headers;
+		soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 		body = g_string_new_len("",0);
 		
 		g_string_sprintf(body,"{\"password\": \"%s\""
@@ -572,15 +586,18 @@ JSObjectRef list_collections_int(SYNC_CTX* s_ctx, const char* username, const ch
 	msg = soup_message_new (SOUP_METHOD_GET, url->str);
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+
+	headers = msg->request_headers;
 	
 	if(if_modified_since > 0){
-		headers = msg->request_headers;
 		SoupDate* modsince = soup_date_new_from_time_t (if_modified_since);
 		char* h = soup_date_to_string (modsince, SOUP_DATE_HTTP);
 		soup_message_headers_replace(headers, "If-Modified-Since", h);
 		soup_date_free(modsince);
 		g_free(h);
 	}
+	
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
 	
 	soup_session_send_message (s_ctx->session, msg);
 	
@@ -635,6 +652,7 @@ gboolean create_collection_int(SYNC_CTX* s_ctx, const char* username, const char
 	GString* body;
 	GHashTable* content;
 	const char* method;          
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(end_point);
 	g_string_append_printf(url, "1.1/%s/storage/%s",username,collection);
@@ -644,6 +662,9 @@ gboolean create_collection_int(SYNC_CTX* s_ctx, const char* username, const char
 	msg = soup_message_new (method, url->str);
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
+
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
 	
 	body = g_string_new_len("",0);
 	
@@ -690,6 +711,7 @@ gboolean delete_collection_int(SYNC_CTX* s_ctx, const char* username, const char
 	SoupMessage *msg;
 	gboolean res;
 	const char* method;          
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(end_point);
 	g_string_append_printf(url, "1.1/%s/storage/%s",username,collection);
@@ -700,6 +722,9 @@ gboolean delete_collection_int(SYNC_CTX* s_ctx, const char* username, const char
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	soup_session_send_message (s_ctx->session, msg);
 	
 	name = soup_message_get_uri (msg)->path;
@@ -735,6 +760,7 @@ gboolean add_wbos_int(SYNC_CTX* s_ctx, const char* username, const char* end_poi
 	const gchar* tmp;
 	const char* method;    
 	int i;
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(end_point);
 	g_string_append_printf(url, "1.1/%s/storage/%s",username,collection);
@@ -745,6 +771,9 @@ gboolean add_wbos_int(SYNC_CTX* s_ctx, const char* username, const char* end_poi
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	body = g_string_sized_new(cnt*500);
 	g_string_append(body,"[");
 	
@@ -843,6 +872,7 @@ WBO* get_record_int(SYNC_CTX* s_ctx, const char* username, const char* end_point
 	WBO* res;
 	const char* method;
 	GError* tmp_error = NULL;
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(end_point);
 	g_string_append_printf(url, "1.1/%s/storage/%s/%s",username,collection,id);
@@ -853,6 +883,9 @@ WBO* get_record_int(SYNC_CTX* s_ctx, const char* username, const char* end_point
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	soup_session_send_message (s_ctx->session, msg);
 	
 	name = soup_message_get_uri (msg)->path;
@@ -889,6 +922,7 @@ GPtrArray* get_collection_int(SYNC_CTX* s_ctx, const char* username, const char*
 	SoupMessage *msg;
 	GPtrArray* res;
 	const char* method;
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(end_point);
 	g_string_append_printf(url, "1.1/%s/storage/%s?full=true",username,collection);
@@ -899,6 +933,9 @@ GPtrArray* get_collection_int(SYNC_CTX* s_ctx, const char* username, const char*
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	soup_session_send_message (s_ctx->session, msg);
 	
 	name = soup_message_get_uri (msg)->path;
@@ -947,6 +984,7 @@ gboolean set_user(SYNC_CTX* s_ctx,  const char* server_url, const char* user, co
 	SoupMessage *msg;
 	gboolean ret;
 	GError* tmp;
+	SoupMessageHeaders* headers;
 	
 	tmp = NULL;
 	// verify user exists
@@ -984,6 +1022,9 @@ gboolean set_user(SYNC_CTX* s_ctx,  const char* server_url, const char* user, co
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	soup_session_send_message (s_ctx->session, msg);
 	
 	name = soup_message_get_uri (msg)->path;
@@ -1437,7 +1478,7 @@ const char* encrypt_wbo_int(SYNC_CTX* s_ctx, const guchar* key, const guchar* hm
 }
 
 
-void init_sync(SYNC_CTX* s_ctx){
+void init_sync(SYNC_CTX* s_ctx, const char* user_agent){
 	s_ctx->ctx = JSGlobalContextCreate(NULL);	
 	s_ctx->session = soup_session_sync_new (
 		#ifdef HAVE_LIBSOUP_GNOME
@@ -1451,6 +1492,7 @@ void init_sync(SYNC_CTX* s_ctx){
 	    soup_session_add_feature (s_ctx->session, SOUP_SESSION_FEATURE (logger));
 	    g_object_unref (logger);
 	}
+	s_ctx->user_agent = user_agent;
 }
 
 void free_sync(SYNC_CTX* s_ctx){
@@ -1491,7 +1533,6 @@ void free_sync(SYNC_CTX* s_ctx){
 		s_ctx->user_pass = NULL;
 	}
 }
-
 
 gboolean refresh_bulk_keys(SYNC_CTX* ctx, GError** err) {
 	GPtrArray* crypto;
@@ -1653,6 +1694,7 @@ gboolean verify_storage(SYNC_CTX* s_ctx, GError** err){
 	const char* method;
 	const char* payload;
 	GError* tmp_error = NULL;
+	SoupMessageHeaders* headers;
 	
 	url = g_string_new(s_ctx->end_point);
 	g_string_append_printf(url, "1.1/%s/storage/meta/global",s_ctx->enc_user);
@@ -1663,6 +1705,9 @@ gboolean verify_storage(SYNC_CTX* s_ctx, GError** err){
 	
 	soup_message_set_flags (msg, SOUP_MESSAGE_NO_REDIRECT);
 	
+	headers = msg->request_headers;
+	soup_message_headers_replace(headers, "User-Agent", s_ctx->user_agent);
+
 	soup_session_send_message (s_ctx->session, msg);
 	
 	name = soup_message_get_uri (msg)->path;
@@ -1983,6 +2028,61 @@ gboolean create_client(SYNC_CTX* s_ctx, const char* client_name, const char* cli
 	wbo_free(wbo);
 	return TRUE;
 }
+
+gboolean client_exists(SYNC_CTX* s_ctx, const char* sync_name, GError** err){
+	GError* tmp_error = NULL;
+	const char* encoded;
+	JSObjectRef client_payload;
+	WBO* wbo;
+	GPtrArray* clients_coll;
+	gboolean found = FALSE;
+	int i;
+	const char* name;
+	
+	clients_coll = get_collection(s_ctx, "clients", &tmp_error);
+	if(clients_coll == NULL){
+		g_assert(tmp_error!=NULL);
+		g_propagate_prefixed_error(err, tmp_error, "Unable to find clients collection on server");
+		return FALSE;
+	}
+	
+	for(i=0; i<clients_coll->len; i++){
+		wbo = g_ptr_array_index(clients_coll, i);
+		encoded = decrypt_wbo(s_ctx, "clients", wbo, &tmp_error);
+		if(encoded == NULL){
+			g_assert(tmp_error!=NULL);
+			g_propagate_prefixed_error(err, tmp_error, "Unable to decrypt clients record");
+			g_ptr_array_unref(clients_coll);
+			return FALSE;
+		}
+		
+		client_payload = js_from_json(s_ctx->ctx, encoded, strlen(encoded), &tmp_error);
+		if(client_payload == NULL){
+			g_assert(tmp_error!=NULL);
+			g_propagate_prefixed_error(err, tmp_error, "Unable to read clients record");
+			g_ptr_array_unref(clients_coll);
+			g_free((gpointer)encoded);
+			return FALSE;
+		}
+		g_free((gpointer)encoded);
+		
+		name = get_string_prop(s_ctx->ctx, client_payload, "name", &tmp_error);
+		if(name == NULL){
+			g_assert(tmp_error!=NULL);
+			g_propagate_prefixed_error(err, tmp_error, "No name property in clients record");
+			g_ptr_array_unref(clients_coll);
+			return FALSE;
+		}
+		
+		if(!strcmp(name, sync_name)){
+			found = TRUE;
+			break;
+		}
+	}
+                     
+	g_ptr_array_unref(clients_coll);
+	return found;
+}	
 
 
 SyncItem* get_bookmark_rec(SYNC_CTX* s_ctx, GPtrArray* bookmarks_wbo, WBO* itm, JSObjectRef wbo_json, GError** err){

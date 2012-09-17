@@ -1,4 +1,4 @@
-/*
+/* :noTabs=true:mode=c:tabSize=4:indentSize=4:folding=explicit:
  Copyright (C) 2012 Eric Le Lay <elelay@macports.org>
 
  This library is free software; you can redistribute it and/or
@@ -512,7 +512,7 @@ mz_sync_extension_reset (MzSyncExtension* extension)
     
     ctx = &(priv->ctx);
     free_sync(ctx);
-    init_sync(ctx);
+    init_sync(ctx, MZ_SYNC_USER_AGENT);
     
     user = mz_sync_extension_get_user (extension);
     pass = mz_sync_extension_get_pass (extension);
@@ -553,6 +553,17 @@ mz_sync_extension_reset (MzSyncExtension* extension)
 			} else {
 				g_clear_error(&err);
 				
+				if(! client_exists(ctx, sync_name, &err) ){
+					if( err == NULL){
+						fprintf (stderr, "Warning: client not declared on the server!\n");
+					}else{
+						fprintf (stderr, "Error: %s\n", err->message);
+						show_error_dialog(err);
+						return;
+					}
+				}
+				
+				g_clear_error(&err);
 				
 				// TODO: load cached copy for fast display...
 				GPtrArray* bookmarks = get_bookmarks(ctx, &err);

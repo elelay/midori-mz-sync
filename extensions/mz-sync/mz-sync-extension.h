@@ -14,6 +14,8 @@
                              
 #include <midori/midori.h>
 
+#define MZ_SYNC_VERSION "0.1"
+#define MZ_SYNC_USER_AGENT "MZ-SYNC/" MZ_SYNC_VERSION MIDORI_VERSION_SUFFIX
 G_BEGIN_DECLS
 
 /* {{{ gobject stuff */

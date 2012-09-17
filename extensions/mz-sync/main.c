@@ -143,7 +143,7 @@ gboolean list_bookmarks(const char* server, const char* user, const char* pass, 
 	SYNC_CTX ctx = { 0 };
 	GError* tmp_error = NULL;
 	
-	init_sync(&ctx);
+	init_sync(&ctx, USER_AGENT);
 	
 	if(!set_user(&ctx, server, user, pass, err) ){
 		g_propagate_error (err, tmp_error);
@@ -183,8 +183,8 @@ gboolean get_data(const char* server, const char* user, const char* pass, const 
 	GError* tmp_error = NULL;
 	FILE* file;
 	
-	init_sync(&ctx);
-	
+	init_sync(&ctx, USER_AGENT);
+
 	file = g_fopen(filename, "w");
 	if(file == NULL){
 		g_set_error (err, MY_SYNC_ERROR, MY_SYNC_ERROR_FAILED, "Error opening file '%s' for writing", filename);
@@ -292,8 +292,8 @@ gboolean get_data(const char* server, const char* user, const char* pass, const 
 gboolean register_and_create_storage(const char* server, const char* user, const char* pass, const char* key, const char* client_name, GError** err){
 	SYNC_CTX ctx = { 0 };
 	
-	init_sync(&ctx);
-	
+	init_sync(&ctx, USER_AGENT);
+
 	if(register_user(&ctx, server, user, pass, err)){
 		if(!set_user(&ctx, server, user, pass, err) ){
 			return FALSE;
@@ -314,8 +314,8 @@ gboolean put_data(const char* server, const char* user, const char* pass, const 
 	SYNC_CTX stored_ctx = { 0 };
 	GError* tmp_error = NULL;
 	
-	init_sync(&stored_ctx);
-	init_sync(&ctx);
+	init_sync(&stored_ctx, USER_AGENT);
+	init_sync(&ctx, USER_AGENT);
 	
 	
 	if(!set_user(&ctx, server, user, pass, &tmp_error) ){
@@ -488,7 +488,7 @@ gboolean test_file(const char* user, const char* key, const char* filename, GErr
 	SYNC_CTX stored_ctx = { 0 };
 	GError* tmp_error = NULL;
 	
-	init_sync(&stored_ctx);
+	init_sync(&stored_ctx, USER_AGENT);
 	
 	JSObjectRef colls;
 	gsize contents_length = 0;

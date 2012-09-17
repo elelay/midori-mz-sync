@@ -40,6 +40,7 @@ typedef struct {
 	const guchar* bulk_key;
 	const guchar* bulk_hmac;
 	const char** user_pass;
+	const char* user_agent;
 } SYNC_CTX;
 
 typedef struct {
@@ -83,14 +84,13 @@ typedef struct {
 	gpointer actual;
 } SyncItem;
 
-void init_sync(SYNC_CTX* s_ctx);
+void init_sync(SYNC_CTX* s_ctx, const char* user_agent);
 void free_sync(SYNC_CTX* s_ctx);
 
 void wbo_free(WBO* itm);
 
 WBO* wbo_from_js(SYNC_CTX* s_ctx, JSObjectRef o, int i, GError** err);
 const gchar* wbo_to_json(SYNC_CTX* s_ctx, WBO* wbo, GError** err);
-
 
 gboolean user_exists(SYNC_CTX* s_ctx, const char* email, const char* server_url, GError** err);
 
@@ -112,6 +112,8 @@ const char* encrypt_wbo(SYNC_CTX* s_ctx, const char* collection, const WBO* w, G
 
 gboolean verify_storage(SYNC_CTX* s_ctx, GError** err);
 
+gboolean client_exists(SYNC_CTX* s_ctx, const char* sync_name, GError** err);
+
 GPtrArray* get_bookmarks(SYNC_CTX* s_ctx, GError** err);
 
 // modification
@@ -120,6 +122,7 @@ gboolean create_collection(SYNC_CTX* s_ctx, const char* collection, GError** err
 gboolean delete_collection(SYNC_CTX* s_ctx, const char* collection, GError** err);
 gboolean add_wbos(SYNC_CTX* s_ctx, const char* collection, WBO* wbos, int cnt, GError** err);
 gboolean create_storage(SYNC_CTX* s_ctx, const char* master_key, const char* client_name, GError** err);
+gboolean create_client(SYNC_CTX* s_ctx, const char* name, const char* type, GError** err);
 
 // utilities
 WBO* get_wbo_by_id(GPtrArray* coll, const char* id);
