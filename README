@@ -1,27 +1,4 @@
-This file is licensed under the terms of the expat license, see the file EXPAT.
+Development has moved to launchpad.
+Meanwhile the extension is taking shape...
 
-Midori is a lightweight web browser.
-
-* Full integration with GTK+2 and GTK+3.
-* Fast rendering with WebKit and HTML5 video with GStreamer.
-* Tabs, windows and session management.
-* History completion and configurable Web Search.
-* User scripts and user styles support.
-* Adblock Plus compatible, external download manager support.
-* Straightforward bookmark management.
-* Customizable interface, extensions written in C and Vala.
-
-Requirements: GLib 2.22, GTK+ 2.16, WebkitGTK+ 1.1.17, libXML2,
-              libsoup 2.27.90, sqlite 3.0, Vala 0.14
-
-Optional: GTK+ 3.0, Unique 0.9, libnotify, gcr
-
-For installation instructions read INSTALL.
-
-Please report comments, suggestions and bugs to:
-    https://bugs.launchpad.net/midori
-
-And join the IRC channel #midori on irc.freenode.net
-
-Check for new versions at:
-    http://www.twotoasts.de
+See https://code.launchpad.net/~neric27/midori/mz-sync/
